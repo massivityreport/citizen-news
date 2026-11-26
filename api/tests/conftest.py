@@ -56,3 +56,12 @@ def client(database_url):
     from app.main import create_app
 
     return TestClient(create_app())
+
+
+@pytest.fixture(autouse=True)
+def _no_stale_front_cache():
+    from app.routers.topics import clear_front_cache
+
+    clear_front_cache()
+    yield
+    clear_front_cache()
