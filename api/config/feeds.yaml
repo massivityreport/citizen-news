@@ -1,0 +1,5 @@
+# RSS feeds of media sources. Filled by the ingestion task.
+# Example entry:
+#   - name: Example Média
+#     feed_url: https://example.org/rss.xml
+feeds: []

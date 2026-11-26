@@ -1,0 +1,98 @@
+"""initial schema
+
+Revision ID: 0001
+Revises: 
+Create Date: 2026-11-26 10:54:59.420305
+"""
+from alembic import op
+import sqlalchemy as sa
+
+
+revision = '0001'
+down_revision = None
+branch_labels = None
+depends_on = None
+
+
+def upgrade() -> None:
+    op.create_table('accounts',
+    sa.Column('id', sa.Integer(), nullable=False),
+    sa.Column('email', sa.String(length=320), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.PrimaryKeyConstraint('id', name=op.f('pk_accounts')),
+    sa.UniqueConstraint('email', name=op.f('uq_accounts_email'))
+    )
+    op.create_table('login_tokens',
+    sa.Column('id', sa.Integer(), nullable=False),
+    sa.Column('email', sa.String(length=320), nullable=False),
+    sa.Column('token_hash', sa.String(length=64), nullable=False),
+    sa.Column('expires_at', sa.DateTime(timezone=True), nullable=False),
+    sa.Column('used_at', sa.DateTime(timezone=True), nullable=True),
+    sa.PrimaryKeyConstraint('id', name=op.f('pk_login_tokens')),
+    sa.UniqueConstraint('token_hash', name=op.f('uq_login_tokens_token_hash'))
+    )
+    op.create_index(op.f('ix_login_tokens_email'), 'login_tokens', ['email'], unique=False)
+    op.create_table('media_sources',
+    sa.Column('id', sa.Integer(), nullable=False),
+    sa.Column('name', sa.String(length=200), nullable=False),
+    sa.Column('feed_url', sa.Text(), nullable=False),
+    sa.PrimaryKeyConstraint('id', name=op.f('pk_media_sources')),
+    sa.UniqueConstraint('feed_url', name=op.f('uq_media_sources_feed_url'))
+    )
+    op.create_table('topics',
+    sa.Column('id', sa.Integer(), nullable=False),
+    sa.Column('title', sa.Text(), nullable=False),
+    sa.Column('summary', sa.Text(), server_default='', nullable=False),
+    sa.Column('first_seen_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('state', sa.String(length=16), server_default='new', nullable=False),
+    sa.Column('wave', sa.Integer(), server_default='0', nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.CheckConstraint("state IN ('new', 'active', 'reserve', 'emerged')", name=op.f('ck_topics_state')),
+    sa.PrimaryKeyConstraint('id', name=op.f('pk_topics'))
+    )
+    op.create_index('ix_topics_state', 'topics', ['state'], unique=False)
+    op.create_table('articles',
+    sa.Column('id', sa.Integer(), nullable=False),
+    sa.Column('source_id', sa.Integer(), nullable=False),
+    sa.Column('url', sa.Text(), nullable=False),
+    sa.Column('title', sa.Text(), nullable=False),
+    sa.Column('summary', sa.Text(), server_default='', nullable=False),
+    sa.Column('published_at', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('fetched_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('topic_id', sa.Integer(), nullable=True),
+    sa.ForeignKeyConstraint(['source_id'], ['media_sources.id'], name=op.f('fk_articles_source_id_media_sources'), ondelete='CASCADE'),
+    sa.ForeignKeyConstraint(['topic_id'], ['topics.id'], name=op.f('fk_articles_topic_id_topics'), ondelete='SET NULL'),
+    sa.PrimaryKeyConstraint('id', name=op.f('pk_articles')),
+    sa.UniqueConstraint('url', name=op.f('uq_articles_url'))
+    )
+    op.create_index('ix_articles_published_at', 'articles', ['published_at'], unique=False)
+    op.create_index('ix_articles_topic_id', 'articles', ['topic_id'], unique=False)
+    op.create_table('votes',
+    sa.Column('id', sa.Integer(), nullable=False),
+    sa.Column('account_id', sa.Integer(), nullable=False),
+    sa.Column('topic_id', sa.Integer(), nullable=False),
+    sa.Column('choice', sa.String(length=16), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.CheckConstraint("choice IN ('more', 'not_priority', 'unknown')", name=op.f('ck_votes_choice')),
+    sa.ForeignKeyConstraint(['account_id'], ['accounts.id'], name=op.f('fk_votes_account_id_accounts'), ondelete='CASCADE'),
+    sa.ForeignKeyConstraint(['topic_id'], ['topics.id'], name=op.f('fk_votes_topic_id_topics'), ondelete='CASCADE'),
+    sa.PrimaryKeyConstraint('id', name=op.f('pk_votes')),
+    sa.UniqueConstraint('account_id', 'topic_id', name='uq_votes_account_id_topic_id')
+    )
+    op.create_index('ix_votes_topic_id', 'votes', ['topic_id'], unique=False)
+
+
+def downgrade() -> None:
+    op.drop_index('ix_votes_topic_id', table_name='votes')
+    op.drop_table('votes')
+    op.drop_index('ix_articles_topic_id', table_name='articles')
+    op.drop_index('ix_articles_published_at', table_name='articles')
+    op.drop_table('articles')
+    op.drop_index('ix_topics_state', table_name='topics')
+    op.drop_table('topics')
+    op.drop_table('media_sources')
+    op.drop_index(op.f('ix_login_tokens_email'), table_name='login_tokens')
+    op.drop_table('login_tokens')
+    op.drop_table('accounts')
