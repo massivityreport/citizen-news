@@ -50,7 +50,7 @@ def test_front_limit_and_validation(client, world):
 
 
 def test_front_empty(client, session):
-    assert client.get("/api/topics/front").json() == {"items": []}
+    assert client.get("/api/topics/front").json() == {"items": [], "has_more": False}
 
 
 def test_front_uses_a_constant_number_of_queries(client, world, session):

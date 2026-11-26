@@ -178,6 +178,22 @@ describe("La une citoyenne", () => {
       }
       expect(screen.queryByRole("button", { name: /Voir plus|Chargement/ })).toBeNull();
       expect(screen.getAllByRole("article")).toHaveLength(50);
+      expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Sujet 41" }));
+    }, 15000);
+
+    it("passe le focus au premier nouvel élément quand le bouton disparaît (has_more=false)", async () => {
+      const fn = stubApi(() => ok([]));
+      fn.mockImplementation(async (url: string) =>
+        url.startsWith("/api/topics/front")
+          ? ok(many(Math.min(limitOf(url), 15)), limitOf(url) < 15)
+          : new Response("{}", { status: 401 }),
+      );
+      renderApp("/");
+      await screen.findByRole("article", { name: "Sujet 10" });
+      await userEvent.click(screen.getByRole("button", { name: "Voir plus" }));
+      await screen.findByRole("article", { name: "Sujet 15" });
+      expect(screen.queryByRole("button", { name: "Voir plus" })).toBeNull();
+      expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Sujet 11" }));
     });
 
     it("garde la liste et propose de réessayer si « Voir plus » échoue", async () => {
