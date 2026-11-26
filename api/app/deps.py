@@ -32,3 +32,9 @@ def client_ip(request: Request) -> str:
         if last:
             return last
     return request.client.host if request.client else "unknown"
+
+
+def optional_account(request: Request, db: Session = Depends(get_session)) -> Account | None:
+    """The logged-in account if there is a valid session, else None (routes usable without an account)."""
+    token = session_token(request)
+    return auth.account_for_session(db, token) if token else None

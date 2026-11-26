@@ -74,3 +74,20 @@ def add_votes(session, topic, more=0, not_priority=0, unknown=0, prefix="v"):
     session.flush()
     session.add_all(Vote(account_id=a.id, topic_id=topic.id, choice=c) for a, c in zip(accounts, plan))
     session.flush()
+
+
+def make_topic(session, title, sources, state="new", wave=0, hours_ago=1.0, now=None, **kw):
+    """A topic with one article from each of `sources` (so it is eligible when len(sources) >= 2).
+    `now` defaults to the real clock: eligibility is computed against it."""
+    from app.models import Topic
+
+    now = now or datetime.now(UTC)
+    topic = Topic(
+        title=title, summary=f"Résumé de {title}", state=state, wave=wave,
+        first_seen_at=now - timedelta(hours=hours_ago + 1), updated_at=now - timedelta(hours=hours_ago), **kw,
+    )
+    session.add(topic)
+    session.flush()
+    for source in sources:
+        make_article(session, source, f"{topic.id}-{source.id}", f"{title} ({source.name})", hours_ago=hours_ago, now=now, topic_id=topic.id)
+    return topic

@@ -1,22 +1,31 @@
+import random
 import time
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_session
 from app.schemas import FrontResponse, FrontTopic, VoteNextResponse
-from app.models.entities import Topic
+from app.deps import optional_account
+from app.models.entities import Account, Topic, Vote
 from app.services.support import support_for
 from app.services.topics import build_cards, eligible_topics
+from app.services.voteflow import flow_candidates, select_flow
 from config.clustering import load_clustering_params
+from config.halving import load_halving_params
 
 router = APIRouter()
 
 FRONT_CACHE_SECONDS = 5.0
 MAX_SEEN = 1000
 _front_cache: dict[int, tuple[float, FrontResponse]] = {}
+
+
+def get_flow_rng() -> random.Random:
+    """Randomness of the vote flow (dependency, so tests can inject a seeded generator)."""
+    return random.Random()
 
 
 def clear_front_cache() -> None:
@@ -60,13 +69,16 @@ def vote_next(
     count: Annotated[int, Query(ge=1, le=20)] = 10,
     seen: str = "",
     session: Session = Depends(get_session),
+    account: Account | None = Depends(optional_account),
+    rng: random.Random = Depends(get_flow_rng),
 ):
-    """Random rotation among eligible topics, without support data. PROVISIONAL: the halving task
-    replaces the random pick with the wave-based selection."""
+    """Next topics to rate, mixed by the halving (see app/services/voteflow.py). Never any result.
+    Excludes `seen` and, with a session, the topics the account already voted on."""
+    excluded = set(_parse_seen(seen))
+    if account is not None:
+        excluded |= set(session.scalars(select(Vote.topic_id).where(Vote.account_id == account.id)))
     eligible = eligible_topics(load_clustering_params()).subquery()
-    query = select(Topic).join(eligible, eligible.c.id == Topic.id)
-    ids = _parse_seen(seen)
-    if ids:
-        query = query.where(Topic.id.not_in(ids))
-    topics = list(session.scalars(query.order_by(func.random()).limit(count)))
-    return VoteNextResponse(items=build_cards(session, topics))
+    candidates = flow_candidates(session, eligible, excluded)
+    ids = select_flow(candidates, count, load_halving_params(), rng)
+    by_id = {t.id: t for t in session.scalars(select(Topic).where(Topic.id.in_(ids)))} if ids else {}
+    return VoteNextResponse(items=build_cards(session, [by_id[i] for i in ids]))
