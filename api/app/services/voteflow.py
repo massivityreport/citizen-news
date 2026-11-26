@@ -126,8 +126,12 @@ def _weighted(weights: dict[str, float], rng: random.Random) -> str:
 
 def flow_candidates(session: Session, eligible_ids, excluded: set[int]) -> list[FlowTopic]:
     """Eligible topics (a subquery of ids) minus `excluded`, with their vote counts."""
+    # Count only the eligible topics' votes: the cost must not grow with the whole votes table.
     counts = (
-        select(Vote.topic_id.label("topic_id"), func.count().label("n")).group_by(Vote.topic_id).subquery()
+        select(Vote.topic_id.label("topic_id"), func.count().label("n"))
+        .where(Vote.topic_id.in_(select(eligible_ids.c.id)))
+        .group_by(Vote.topic_id)
+        .subquery()
     )
     query = (
         select(Topic.id, Topic.state, Topic.wave, func.coalesce(counts.c.n, 0), Topic.evaluated_at)

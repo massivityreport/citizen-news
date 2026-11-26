@@ -69,8 +69,7 @@ def run_seed_demo(seed: int = 1) -> int:
 
 
 def run_refresh() -> int:
-    code = run_ingest()
-    run_cluster()
+    code = run_ingest() or run_cluster()  # a clustering failure must not be masked
     return run_halve() or code
 
 

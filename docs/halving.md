@@ -38,6 +38,8 @@ Après `waves` vagues franchies, le sujet est `emerged`. Il n'est plus proposé 
 
 ### Repêchage : on ne condamne jamais définitivement
 
+« Jamais définitif » s'entend **dans la fenêtre de regroupement** : un sujet en réserve dont le dernier article sort de la fenêtre (`window_hours`) n'est plus proposé au repêchage, l'actualité périmée n'étant pas re-testée.
+
 Le flux de vote réserve `rescue_share` de ses places à des sujets en réserve, tirés au hasard parmi la moitié **la moins récemment évaluée**. Quand un sujet repêché a reçu `min_votes_first_decision` nouveaux votes, il redevient candidat à sa vague, noté sur **tous** ses votes, face aux mêmes pairs. S'il retrouve le haut du classement, il est promu ; sinon il reste en réserve, avec une nouvelle date d'évaluation (donc il passe à l'arrière de la file de repêchage).
 
 ### Exemple chiffré
@@ -72,7 +74,7 @@ Paramètres par défaut. Huit sujets reçoivent leur premier lot de 20 votes (da
 
 Hors bornes, le chargement échoue. Une sévérité extrême reste sûre : on garde toujours au moins un sujet par comparaison, jamais zéro.
 
-Limites connues : le score ne se calcule que sur les votes de la table `votes` ; un sujet qui reste seul avec des pairs peu nombreux est comparé à peu de monde (la sélection devient plus indulgente quand l'échantillon est petit) ; changer les paramètres ne recalcule pas les sujets déjà évalués (ils sont reclassés seulement quand ils redeviennent candidats).
+Limites connues : `POST /api/votes` accepte tout sujet existant (même sorti de la fenêtre ou en réserve), car modifier un vote antérieur doit rester possible ; seuls le quota de débit et l'unicité compte + sujet bornent les votes ; le score ne se calcule que sur les votes de la table `votes` ; un sujet qui reste seul avec des pairs peu nombreux est comparé à peu de monde (la sélection devient plus indulgente quand l'échantillon est petit) ; changer les paramètres ne recalcule pas les sujets déjà évalués (ils sont reclassés seulement quand ils redeviennent candidats).
 
 ## Le flux de vote (`GET /api/vote/next`)
 

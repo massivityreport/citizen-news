@@ -195,3 +195,21 @@ def test_vote_next_when_only_one_category_exists(client, session):
 def test_vote_next_validation(client, world):
     assert client.get("/api/vote/next?count=0").status_code == 422
     assert client.get("/api/vote/next?seen=a").status_code == 422
+
+
+def test_vote_counts_come_from_eligible_topics_only(world, session):
+    from sqlalchemy import select
+
+    from app.models import Topic
+    from app.services.topics import eligible_topics
+    from app.services.voteflow import flow_candidates
+    from config.clustering import load_clustering_params
+
+    add_votes(session, world["new"][0], more=4)
+    add_votes(session, world["reserve"][0], more=2, not_priority=1)
+    add_votes(session, session.scalar(select(Topic).where(Topic.title == "Un seul média")), more=9)  # not eligible
+    session.commit()
+    eligible = eligible_topics(load_clustering_params()).subquery()
+    found = {t.id: t.votes for t in flow_candidates(session, eligible, set())}
+    assert found[world["new"][0].id] == 4 and found[world["reserve"][0].id] == 3
+    assert found[world["new"][1].id] == 0 and len(found) == 18
