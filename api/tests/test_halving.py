@@ -185,3 +185,32 @@ def test_unrelated_topic_updates_still_let_the_clustering_set_updated_at(session
     session.commit()
     session.refresh(topic)
     assert topic.updated_at == later
+
+
+def test_worked_example_of_docs_halving_md():
+    first = {"D": (18, 2, 0), "A": (15, 5, 0), "G": (8, 2, 10), "B": (3, 0, 17),
+             "C": (12, 8, 0), "E": (10, 10, 0), "F": (5, 15, 0), "H": (1, 19, 0)}
+    ids = {k: i for i, k in enumerate(first, 1)}
+    topics = [tv(ids[k], *v) for k, v in first.items()]
+    out = run(topics)
+    assert {k: out[ids[k]] for k in first} == {
+        "D": ("active", 1), "A": ("active", 1), "G": ("active", 1), "B": ("active", 1),
+        "C": ("reserve", 0), "E": ("reserve", 0), "F": ("reserve", 0), "H": ("reserve", 0),
+    }
+    # round 2: D and A reach 40 votes at wave 1 (alone at that quota): only D stays
+    state = {t.id: TopicVotes(id=t.id, state=out[t.id][0], wave=out[t.id][1], more=t.more, not_priority=t.not_priority,
+                              unknown=t.unknown, votes_at_eval=20) for t in topics}
+    state[ids["D"]] = tv(ids["D"], 28, 4, 8, state="active", wave=1, votes_at_eval=20)
+    state[ids["A"]] = tv(ids["A"], 25, 15, 0, state="active", wave=1, votes_at_eval=20)
+    changed = {t.id: t for t in decide(list(state.values()), P, NOW)}
+    state.update(changed)
+    assert (state[ids["D"]].state, state[ids["D"]].wave) == ("active", 2)
+    assert (state[ids["A"]].state, state[ids["A"]].wave) == ("reserve", 1)
+    # round 3: C is rescued: 20 new votes, 28 / 12 / 0 (score 0.55, second of the 8 evaluated at wave 0);
+    # its 40 votes also reach the wave-1 quota, so it is evaluated again at once: second of D, C, A.
+    state[ids["C"]] = tv(ids["C"], 28, 12, 0, state="reserve", wave=0, votes_at_eval=20)
+    state.update({t.id: t for t in decide(list(state.values()), P, NOW)})
+    assert (state[ids["C"]].state, state[ids["C"]].wave) == ("active", 2)
+    assert (state[ids["A"]].state, state[ids["A"]].wave) == ("reserve", 1)
+    assert round(wilson_lower_bound(28, 40), 2) == 0.55
+    assert round(wilson_lower_bound(15, 20), 2) == 0.53 and round(wilson_lower_bound(3, 3), 2) == 0.44
