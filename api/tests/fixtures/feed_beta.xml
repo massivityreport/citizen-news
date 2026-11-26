@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"><channel><title>Beta</title>
+<item><title>Retraites : syndicats et gouvernement reprennent les discussions</title>
+<link>https://beta.example/retraites</link>
+<description>Les syndicats rencontrent le gouvernement lundi autour de la réforme des retraites.</description>
+<pubDate>Wed, 25 Nov 2026 12:00:00 GMT</pubDate></item>
+<item><title>Le PSG s'impose face à Marseille dans le Classique</title>
+<link>https://beta.example/psg-om</link>
+<description>Le Paris Saint-Germain a battu l'Olympique de Marseille 2-0.</description>
+<pubDate>Wed, 25 Nov 2026 20:00:00 GMT</pubDate></item>
+</channel></rss>

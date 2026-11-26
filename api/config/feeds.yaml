@@ -1,5 +1,28 @@
-# RSS feeds of media sources. Filled by the ingestion task.
-# Example entry:
-#   - name: Example Média
-#     feed_url: https://example.org/rss.xml
-feeds: []
+# RSS feeds of French general-interest media. One entry per media: name + feed_url.
+# Validated at load time (http/https URLs, no duplicate name or URL): see config/feeds.py.
+# URLs were checked on 2026-11-26. Les Echos (403/503 for automated clients) is left out.
+feeds:
+  - name: Le Monde
+    feed_url: https://www.lemonde.fr/rss/une.xml
+  - name: Le Figaro
+    feed_url: https://www.lefigaro.fr/rss/figaro_actualites-a-la-une.xml
+  - name: Libération
+    feed_url: https://www.liberation.fr/arc/outboundfeeds/rss-all/collection/accueil-une/?outputType=xml
+  - name: France Info
+    feed_url: https://www.francetvinfo.fr/titres.rss
+  - name: Le Parisien
+    feed_url: https://feeds.leparisien.fr/leparisien/rss
+  - name: 20 Minutes
+    feed_url: https://www.20minutes.fr/feeds/rss-une.xml
+  - name: Ouest-France
+    feed_url: https://www.ouest-france.fr/rss/une
+  - name: L'Humanité
+    feed_url: https://www.humanite.fr/feed
+  - name: La Croix
+    feed_url: https://www.la-croix.com/feeds/rss/site.xml
+  - name: Mediapart
+    feed_url: https://www.mediapart.fr/articles/feed
+  - name: Courrier international
+    feed_url: https://www.courrierinternational.com/feed/all/rss.xml
+  - name: RFI
+    feed_url: https://www.rfi.fr/fr/rss

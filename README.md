@@ -14,7 +14,7 @@ cp .env.example .env   # optionnel : les valeurs par défaut conviennent au dév
 docker compose up --build
 ```
 
-- PostgreSQL (service `db`, volume nommé `pgdata`) puis l'API (service `api`).
+- PostgreSQL (service `db`, volume nommé `pgdata`), l'API (service `api`), puis le `worker` qui récupère les flux RSS et regroupe les articles en sujets toutes les 15 minutes (`INGEST_INTERVAL_MINUTES`). La une se remplit après le premier cycle (quelques secondes).
 - L'API applique les migrations Alembic (`alembic upgrade head`) puis lance uvicorn sur <http://localhost:8000>.
 - Vérification : `curl http://localhost:8000/api/health` → `{"status":"ok"}`. Documentation interactive : <http://localhost:8000/docs>.
 - Repartir d'une base vide : `docker compose down -v`.
@@ -28,8 +28,18 @@ Variables d'environnement (voir `.env.example`) :
 | `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | Base PostgreSQL (le mot de passe par défaut n'est valable qu'en développement) |
 | `DATABASE_URL` | URL SQLAlchemy de l'API (construite par le compose) |
 | `CORS_ORIGINS` | Origines autorisées par CORS, séparées par des virgules |
+| `INGEST_INTERVAL_MINUTES` | Minutes entre deux cycles d'ingestion du `worker` (défaut 15) |
 
-Fichiers dans `api/config/` : `feeds.yaml` (flux RSS, rempli par la tâche d'ingestion) et `halving.yaml` (sévérité du halving ; valeurs validées au chargement, hors bornes refusées).
+Fichiers dans `api/config/` : `feeds.yaml` (flux RSS des médias), `clustering.yaml` (seuil de similarité, fenêtre de temps, sources minimales pour la une) et `halving.yaml` (sévérité du halving ; valeurs validées au chargement, hors bornes refusées).
+
+## Alimentation en sujets
+
+```bash
+docker compose run --rm api python -m app.cli refresh   # ingest + cluster, une fois
+curl 'http://localhost:8000/api/topics/front?limit=5'
+```
+
+Commandes `ingest`, `cluster`, `refresh`, `run`, réglage du seuil de regroupement et détail des endpoints : [api/README.md](api/README.md).
 
 ## Tests
 
@@ -53,7 +63,7 @@ docker compose run --rm --user root -v "$PWD/api:/srv/api" api \
 ## Structure
 
 ```
-docker-compose.yml        db (PostgreSQL 16) + api
+docker-compose.yml        db (PostgreSQL 16) + api + worker (ingestion périodique)
 api/
   Dockerfile, pyproject.toml, alembic.ini
   alembic/versions/       migrations
@@ -62,8 +72,9 @@ api/
     db.py                 moteur et session SQLAlchemy
     models/               schéma de données
     routers/              routes HTTP (préfixe /api)
-    services/             logique métier
-  config/                 settings.py, halving.py + halving.yaml, feeds.yaml
+    services/             logique métier (ingestion, regroupement, sujets)
+    cli.py                commandes ingest / cluster / refresh / run
+  config/                 settings.py, halving.py/.yaml, feeds.py/.yaml, clustering.py/.yaml
   tests/                  pytest (base PostgreSQL réelle)
 docs/                     brief produit, contrat HTTP
 ```
