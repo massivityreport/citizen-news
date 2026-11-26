@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { screen, within } from "@testing-library/react";
+import { fireEvent, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderApp } from "../test/utils";
 import type { FrontTopic } from "../api/types";
@@ -15,6 +15,7 @@ const topic = (over: Partial<FrontTopic> = {}): FrontTopic => ({
     { name: "Ouest-France", url: "https://example.org/b", title: "Titre B", published_at: hoursAgo(9) },
     { name: "Piégé", url: "javascript:alert(1)", title: "x", published_at: hoursAgo(9) },
   ],
+  image_url: null,
   first_seen_at: hoursAgo(72),
   updated_at: hoursAgo(2),
   support: { level: "high", votes_count: 10 },
@@ -48,6 +49,21 @@ describe("La une citoyenne", () => {
     expect(within(card).getByRole("link", { name: /Ouest-France/ })).toBeInTheDocument();
     expect(within(card).getByText(/il y a 2 heures/)).toBeInTheDocument();
     expect(within(card).getByText(/Apparu/)).toBeInTheDocument();
+  });
+
+  it("affiche l'image du sujet, puis la retire proprement si elle ne charge pas", async () => {
+    stubApi(() => ok([topic({ image_url: "https://img.example.org/a.jpg" }), topic({ id: 2, title: "Autre sujet" })]));
+    renderApp("/");
+    const card = await screen.findByRole("article", { name: "Pénurie de médecins" });
+    const img = within(card).getByRole("img", { name: "Illustration : Pénurie de médecins" });
+    expect(img).toHaveAttribute("src", "https://img.example.org/a.jpg");
+    expect(img).toHaveAttribute("loading", "lazy");
+    expect(img).toHaveAttribute("referrerpolicy", "no-referrer");
+    expect(within(screen.getByRole("article", { name: "Autre sujet" })).queryByRole("img")).toBeNull();
+    fireEvent.error(img);
+    expect(within(card).queryByRole("img")).toBeNull();
+    expect(within(card).getByRole("heading", { name: "Pénurie de médecins" })).toBeInTheDocument();
+    expect(within(card).getByText("Des délais de trois mois.")).toBeInTheDocument();
   });
 
   it("ne rend pas cliquable un lien non http(s)", async () => {

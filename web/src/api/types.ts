@@ -25,6 +25,8 @@ export interface TopicCard {
   title: string;
   summary: string;
   sources: Source[];
+  /** https validée côté serveur, ou null. Chargée en hotlink par le navigateur. */
+  image_url: string | null;
   first_seen_at: string;
   updated_at: string;
 }

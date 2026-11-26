@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import type { FrontTopic } from "../api/types";
 import { ReasonBadge, SupportIndicator } from "../components/Badges";
+import { TopicImage } from "../components/TopicImage";
 import { SourceList } from "../components/SourceList";
 import topic from "../components/Topic.module.css";
 import { usePageTitle } from "../components/usePageTitle";
@@ -16,6 +17,7 @@ function FrontCard({ t }: { t: FrontTopic }) {
   const first = formatDate(t.first_seen_at);
   return (
     <article className={topic.card} aria-labelledby={`topic-${t.id}`}>
+      <TopicImage url={t.image_url} title={t.title} />
       <ReasonBadge reason={t.reason} />
       <h2 id={`topic-${t.id}`}>{t.title}</h2>
       <p className={topic.summary}>{t.summary}</p>
