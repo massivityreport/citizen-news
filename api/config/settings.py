@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     rate_limit_magic_link_per_ip: int = 20
     rate_limit_verify_per_ip: int = 30
     rate_limit_claim_per_account: int = 30
+    # Direct votes: per account, over their own (short) window.
+    rate_limit_vote_per_account: int = 120
+    rate_limit_vote_window_seconds: int = 60
     # Take the client IP from X-Forwarded-For (last entry, added by the reverse proxy). Only behind a proxy.
     trust_proxy: bool = False
 
