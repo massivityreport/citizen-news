@@ -16,11 +16,18 @@ afterEach(() => vi.unstubAllGlobals());
 
 describe("api client", () => {
   it("appelle /api avec les cookies de session", async () => {
-    const fetchMock = mockFetch(200, { items: [] });
+    const fetchMock = mockFetch(200, { items: [], has_more: false });
     await api.topicsFront(20);
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe("/api/topics/front?limit=20");
     expect(init.credentials).toBe("include");
+  });
+
+  it("topicsFront demande 10 sujets par défaut et expose has_more", async () => {
+    const fetchMock = mockFetch(200, { items: [], has_more: true });
+    const res = await api.topicsFront();
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/topics/front?limit=10");
+    expect(res.has_more).toBe(true);
   });
 
   it("encode seen et count pour /vote/next", async () => {

@@ -47,13 +47,17 @@ Contrat que les tâches backend suivantes implémentent et que le front consomme
 
 ## Sujets
 
-### `GET /api/topics/front?limit=20` — public
+### `GET /api/topics/front?limit=10` — public
 
-La une citoyenne. `limit` : entier 1–50, défaut 20.
+La une citoyenne. `limit` : entier 1–50, défaut 10.
 
 ```json
-{ "items": [ { /* TopicCard */, "support": {…}, "reason": {…} } ] }
+{ "items": [ { /* TopicCard */, "support": {…}, "reason": {…} } ], "has_more": true }
 ```
+
+`has_more` : vrai s'il existe des sujets classés au-delà de `limit`.
+
+**Pagination (« Voir plus »)** : pas d'`offset` ni de curseur. Le rang dépend du temps (fraîcheur) : un offset donnerait des doublons ou des trous d'une page à l'autre. Le front redemande donc la liste complète avec un `limit` croissant (10, 20, 30… jusqu'à 50) et **remplace** la liste affichée par la réponse, sans jamais concaténer. À un instant donné, la liste `limit=N` est le préfixe de la liste `limit=N+10`.
 
 Classement : mélange du soutien citoyen et de la fraîcheur. Chaque carte a toujours un `support` et une `reason`. La v1 n'émet que les quatre raisons ci-dessus (pas d'« Alerte minoritaire »). Détail : [halving.md](halving.md).
 

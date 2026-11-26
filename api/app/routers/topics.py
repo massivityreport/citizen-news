@@ -34,14 +34,15 @@ def clear_front_cache() -> None:
 
 
 @router.get("/topics/front", response_model=FrontResponse)
-def front(limit: Annotated[int, Query(ge=1, le=50)] = 20, session: Session = Depends(get_session)):
+def front(limit: Annotated[int, Query(ge=1, le=50)] = 10, session: Session = Depends(get_session)):
     cached = _front_cache.get(limit)
     if cached and time.monotonic() - cached[0] < FRONT_CACHE_SECONDS:
         return cached[1]
-    ranked = front_topics(session, limit, load_clustering_params(), load_front_params())
+    ranked, has_more = front_topics(session, limit, load_clustering_params(), load_front_params())
     cards = build_cards(session, [topic for topic, _, _ in ranked])
     response = FrontResponse(
-        items=[FrontTopic(**card.model_dump(), support=support, reason=reason) for card, (_, support, reason) in zip(cards, ranked)]
+        items=[FrontTopic(**card.model_dump(), support=support, reason=reason) for card, (_, support, reason) in zip(cards, ranked)],
+        has_more=has_more,
     )
     _front_cache[limit] = (time.monotonic(), response)
     return response

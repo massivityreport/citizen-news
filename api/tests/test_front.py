@@ -162,6 +162,40 @@ def test_front_limit(client, world):
     assert len(front(client, 2)) == 2
 
 
+def test_front_default_limit_is_10_and_has_more(client, session):
+    a, b = make_sources(session, "A", "B")
+    for i in range(12):
+        add_votes(session, make_topic(session, f"Sujet {i}", [a, b], hours_ago=1 + i), more=20, not_priority=2)
+    session.commit()
+    body = client.get("/api/topics/front").json()
+    assert len(body["items"]) == 10 and body["has_more"] is True
+    body = client.get("/api/topics/front?limit=12").json()
+    assert len(body["items"]) == 12 and body["has_more"] is False
+    body = client.get("/api/topics/front?limit=50").json()
+    assert len(body["items"]) == 12 and body["has_more"] is False
+
+
+def test_front_has_more_is_false_when_exactly_limit(client, world):
+    n = len(front(client, 50))
+    assert client.get(f"/api/topics/front?limit={n}").json()["has_more"] is False
+    assert client.get(f"/api/topics/front?limit={n - 1}").json()["has_more"] is True
+
+
+def test_front_limit_is_a_prefix_without_duplicates(session):
+    from app.services.front import front_topics
+    from config.clustering import load_clustering_params
+
+    a, b = make_sources(session, "A", "B")
+    for i in range(25):
+        add_votes(session, make_topic(session, f"Sujet {i}", [a, b], hours_ago=1 + i % 7), more=10 + i, not_priority=2)
+    session.commit()
+    now = datetime.now(UTC)
+    ids = lambda n: [t.id for t, _, _ in front_topics(session, n, load_clustering_params(), load_front_params(), now)[0]]  # noqa: E731
+    first, second = ids(10), ids(20)
+    assert second[:10] == first
+    assert len(set(second)) == len(second) == 20
+
+
 def test_front_support_comes_only_from_votes_of_accounts(client, session):
     a, b = make_sources(session, "A", "B")
     make_topic(session, "Sans vote", [a, b], hours_ago=30)  # old and no votes: no front page

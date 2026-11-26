@@ -39,6 +39,7 @@ class FrontTopic(TopicCard):
 
 class FrontResponse(BaseModel):
     items: list[FrontTopic]
+    has_more: bool
 
 
 class VoteNextResponse(BaseModel):
