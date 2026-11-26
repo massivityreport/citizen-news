@@ -48,4 +48,30 @@ describe("API simulée", () => {
     expect(votes).toContainEqual({ topic_id: 1, choice: "more" });
     expect(votes).toContainEqual({ topic_id: 2, choice: "more" });
   });
+
+  it("magic-link : 202 sans corps, 422 si invalide, 429 avec Retry-After", async () => {
+    await expect(api.magicLink("a@b.fr")).resolves.toBeUndefined();
+    await expect(api.magicLink("pas-un-email")).rejects.toMatchObject({ status: 422 });
+    await expect(api.magicLink("limite@example.org")).rejects.toMatchObject({ status: 429, retryAfter: 5 });
+  });
+
+  it("verify refuse un jeton vide ou « expire » (400), logout met fin à la session", async () => {
+    await expect(api.verify("")).rejects.toMatchObject({ status: 400 });
+    await expect(api.verify("expire")).rejects.toMatchObject({ status: 400 });
+    await api.verify("demo");
+    await api.logout();
+    expect(await api.me()).toBeNull();
+  });
+
+  it("claim refuse un lot de plus de 200 votes (422)", async () => {
+    await api.verify("demo");
+    const votes = Array.from({ length: 201 }, (_, i) => ({ topic_id: i + 1, choice: "more" as const }));
+    await expect(api.claimVotes(votes)).rejects.toMatchObject({ status: 422 });
+  });
+
+  it("sert les paramètres du halving avec une description par clé", async () => {
+    const { params, description } = await api.halvingConfig();
+    expect(params).toEqual({ min_votes_first_decision: 20, keep_ratio: 0.5, waves: 3, new_topic_traffic_share: 0.3, rescue_share: 0.1 });
+    for (const k of Object.keys(params)) expect(description[k]).toBeTruthy();
+  });
 });
