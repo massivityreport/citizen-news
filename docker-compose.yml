@@ -25,6 +25,22 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # Periodic ingestion + clustering. Starts once the API is healthy, i.e. once migrations are applied.
+  worker:
+    build: ./api
+    command: ["python", "-m", "app.cli", "run", "--interval-minutes", "${INGEST_INTERVAL_MINUTES:-15}"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-citizen}:${POSTGRES_PASSWORD:-citizen_dev_only}@db:5432/${POSTGRES_DB:-citizen_news}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+    depends_on:
+      api:
+        condition: service_healthy
 
 volumes:
   pgdata:
