@@ -1,0 +1,4 @@
+# Topic clustering (TF-IDF + cosine similarity). See api/README.md for how to tune the threshold.
+similarity_threshold: 0.35   # minimum cosine similarity to join an existing topic (higher = stricter)
+window_hours: 48             # only articles/topics active within this window are clustered
+min_sources_for_front: 2     # distinct media needed for a topic to appear on the front page
