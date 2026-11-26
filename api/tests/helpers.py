@@ -63,7 +63,7 @@ def ask(api, email="a@example.org"):
     return api.post("/api/auth/magic-link", json={"email": email})
 
 
-def add_votes(session, topic, more=0, not_priority=0, unknown=0, prefix="v"):
+def add_votes(session, topic, more=0, not_priority=0, unknown=0, prefix="v", hours_ago=None):
     """Give `topic` that many votes, each from a fresh account (one vote per account and topic)."""
     from app.models import Account, Vote
 
@@ -72,7 +72,8 @@ def add_votes(session, topic, more=0, not_priority=0, unknown=0, prefix="v"):
     accounts = [Account(email=f"{prefix}{n + i}@example.org") for i in range(len(plan))]
     session.add_all(accounts)
     session.flush()
-    session.add_all(Vote(account_id=a.id, topic_id=topic.id, choice=c) for a, c in zip(accounts, plan))
+    extra = {} if hours_ago is None else {"created_at": datetime.now(UTC) - timedelta(hours=hours_ago)}
+    session.add_all(Vote(account_id=a.id, topic_id=topic.id, choice=c, **extra) for a, c in zip(accounts, plan))
     session.flush()
 
 

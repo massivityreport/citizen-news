@@ -10,10 +10,11 @@ from app.db import get_session
 from app.schemas import FrontResponse, FrontTopic, VoteNextResponse
 from app.deps import optional_account
 from app.models.entities import Account, Topic, Vote
-from app.services.support import support_for
+from app.services.front import front_topics
 from app.services.topics import build_cards, eligible_topics
 from app.services.voteflow import flow_candidates, select_flow
 from config.clustering import load_clustering_params
+from config.front import load_front_params
 from config.halving import load_halving_params
 
 router = APIRouter()
@@ -37,18 +38,10 @@ def front(limit: Annotated[int, Query(ge=1, le=50)] = 20, session: Session = Dep
     cached = _front_cache.get(limit)
     if cached and time.monotonic() - cached[0] < FRONT_CACHE_SECONDS:
         return cached[1]
-    eligible = eligible_topics(load_clustering_params()).subquery()
-    topics = list(
-        session.scalars(
-            select(Topic).join(eligible, eligible.c.id == Topic.id).order_by(Topic.updated_at.desc(), Topic.id.desc()).limit(limit)
-        )
-    )
-    support = support_for(topics)
+    ranked = front_topics(session, limit, load_clustering_params(), load_front_params())
+    cards = build_cards(session, [topic for topic, _, _ in ranked])
     response = FrontResponse(
-        items=[
-            FrontTopic(**card.model_dump(), support=support[card.id][0], reason=support[card.id][1])
-            for card in build_cards(session, topics)
-        ]
+        items=[FrontTopic(**card.model_dump(), support=support, reason=reason) for card, (_, support, reason) in zip(cards, ranked)]
     )
     _front_cache[limit] = (time.monotonic(), response)
     return response
