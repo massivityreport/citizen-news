@@ -168,6 +168,8 @@ Postgres léger : ≈ 50 Mio au repos (`docker stats`). Je n'ai pas mesuré la c
 
 **Limite non vérifiée** : ces mesures viennent d'un container de 2 Go, pas de 1 Go sans swap. Un total de ≈ 770 Mio (repos ≈ 520 + 250) tient sous 1 Go sur le papier, avec ≈ 250 Mio de marge, mais le repos d'un container varie (session `claude`, navigateur, autres processus).
 
+**`/tmp` compte dans la limite** : dans un container de 1 Go, `/tmp` est un tmpfs imputé à la mémoire (des restes de pip/venv de plus de 400 Mio ont été observés chez le Reviewer). Vider `/tmp` avant de lancer (`find /tmp -mindepth 1 -delete`), et dans un container de 1 Go ne pas faire build et tests ensemble : construire d'abord, puis tester.
+
 **Mémoire recommandée : 1,5 Go** ; en dessous de ≈ 1 Go la suite ne passe pas de façon fiable. Ne jamais lancer le build et les tests en même temps. Si la limite est atteinte :
 
 1. Lancer fichier par fichier : `for f in api/tests/test_*.py; do scripts/test-api.sh tests/$(basename $f) || break; done` (le pic d'un fichier, +193 Mio, est proche de celui de la suite, +246 Mio : l'économie est modeste).
