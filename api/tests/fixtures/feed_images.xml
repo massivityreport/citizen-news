@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/" xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel><title>Images</title>
+<item><title>Source media content</title><link>https://img.example/a/media-content</link>
+<media:content url="https://cdn.example/mc.jpg" medium="image"/>
+<media:thumbnail url="https://cdn.example/thumb-ignored.jpg"/>
+<enclosure url="https://cdn.example/enc-ignored.jpg" type="image/jpeg" length="1"/>
+<description>&lt;img src="https://cdn.example/html-ignored.jpg"&gt;</description></item>
+<item><title>Source media content par type</title><link>https://img.example/a/media-type</link>
+<media:content url="https://cdn.example/video.mp4" medium="video"/>
+<media:content url="https://cdn.example/typed.png" type="image/png"/></item>
+<item><title>Source media thumbnail</title><link>https://img.example/a/thumb</link>
+<media:thumbnail url="https://cdn.example/thumb.jpg"/>
+<enclosure url="https://cdn.example/enc-ignored.jpg" type="image/jpeg" length="1"/></item>
+<item><title>Source enclosure</title><link>https://img.example/a/enclosure</link>
+<enclosure url="https://cdn.example/audio.mp3" type="audio/mpeg" length="1"/>
+<enclosure url="https://cdn.example/enc.jpg" type="image/jpeg" length="1"/></item>
+<item><title>Source HTML du résumé</title><link>https://img.example/a/summary</link>
+<description>&lt;p&gt;Texte&lt;/p&gt;&lt;img src="/media/relative.jpg" alt="x"&gt;</description></item>
+<item><title>Source HTML du contenu</title><link>https://img.example/a/content</link>
+<content:encoded><![CDATA[<p>Texte</p><img src="https://cdn.example/content.jpg">]]></content:encoded></item>
+<item><title>Candidat invalide puis suivant</title><link>https://img.example/a/fallback</link>
+<media:content url="http://cdn.example/insecure.jpg" medium="image"/>
+<media:thumbnail url="https://user:pw@cdn.example/creds.jpg"/>
+<enclosure url="https://cdn.example/fallback.jpg" type="image/jpeg" length="1"/></item>
+<item><title>Que des images invalides</title><link>https://img.example/a/invalid</link>
+<media:content url="data:image/png;base64,AAAA" medium="image"/>
+<description>&lt;img src="javascript:alert(1)"&gt;</description></item>
+<item><title>Sans image</title><link>https://img.example/a/none</link><description>Texte seul</description></item>
+</channel></rss>
