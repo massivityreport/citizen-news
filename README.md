@@ -72,6 +72,7 @@ Variables d'environnement (voir `.env.example`) :
 | `COOKIE_SECURE` | `true` dès que l'API est servie en HTTPS (cookie `Secure`) ; `false` en développement |
 | `ADMIN_PASSWORD` | Mot de passe unique du backoffice (`/admin`). Défaut de développement : `make-media-great-again`. L'API **refuse de démarrer** avec ce défaut et `COOKIE_SECURE=true` (et journalise un avertissement avec `COOKIE_SECURE=false`) : **à changer en production**, par un secret long qui ne figure dans aucun dépôt. Jamais écrit dans les logs ni les réponses |
 | `ADMIN_SESSION_HOURS` | Durée de la session admin, en heures (défaut 8) |
+| `RATE_LIMIT_ADMIN_LOGIN_PER_IP`, `RATE_LIMIT_ADMIN_LOGIN_WINDOW_SECONDS` | Tentatives de connexion admin par IP (10) sur la fenêtre (900 s) ; `429` + `Retry-After` au-delà |
 | `SESSION_TTL_DAYS`, `LOGIN_TOKEN_TTL_MINUTES` | Durée de la session (30 jours) et du lien magique (15 minutes) |
 | `MAIL_BACKEND` | `console` (défaut) : le lien est écrit dans les logs de l'API, **développement seulement** ; `smtp` : envoi réel |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_STARTTLS`, `MAIL_FROM` | Serveur SMTP (port 587 et STARTTLS par défaut ; `SMTP_HOST` obligatoire avec `smtp`). Le mot de passe ne vient que de l'environnement |
