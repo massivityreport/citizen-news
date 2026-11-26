@@ -72,6 +72,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    logging.getLogger("httpx").setLevel(logging.WARNING)  # one line per HTTP request is noise
     if args.command == "run":
         if args.interval_minutes <= 0:
             parser.error("--interval-minutes doit être positif")

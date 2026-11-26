@@ -19,7 +19,7 @@ feeds:
   - name: L'Humanité
     feed_url: https://www.humanite.fr/feed
   - name: La Croix
-    feed_url: https://www.la-croix.com/RSS
+    feed_url: https://www.la-croix.com/feeds/rss/site.xml
   - name: Mediapart
     feed_url: https://www.mediapart.fr/articles/feed
   - name: Courrier international
