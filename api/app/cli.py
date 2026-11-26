@@ -69,8 +69,11 @@ def run_seed_demo(seed: int = 1) -> int:
 
 
 def run_refresh() -> int:
-    code = run_ingest() or run_cluster()  # a clustering failure must not be masked
-    return run_halve() or code
+    # The three steps always run; the exit code is the first non-zero one (no failure is masked).
+    ingested = run_ingest()
+    clustered = run_cluster()
+    halved = run_halve()
+    return ingested or clustered or halved
 
 
 def run_loop(interval_minutes: float, stop: threading.Event) -> int:

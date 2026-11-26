@@ -79,3 +79,12 @@ def test_refresh_keeps_the_clustering_exit_code_and_still_halves(monkeypatch):
     monkeypatch.setattr(cli, "run_halve", lambda: calls.append("halve") or 0)
     assert cli.run_refresh() == 3
     assert calls == ["ingest", "cluster", "halve"]
+
+
+def test_refresh_runs_every_step_when_ingest_fails(monkeypatch):
+    calls = []
+    monkeypatch.setattr(cli, "run_ingest", lambda: calls.append("ingest") or 2)
+    monkeypatch.setattr(cli, "run_cluster", lambda: calls.append("cluster") or 0)
+    monkeypatch.setattr(cli, "run_halve", lambda: calls.append("halve") or 0)
+    assert cli.run_refresh() == 2
+    assert calls == ["ingest", "cluster", "halve"]
