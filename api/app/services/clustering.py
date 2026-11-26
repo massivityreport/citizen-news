@@ -89,7 +89,7 @@ def cluster(
     members: dict[int, list[Article]] = {t.id: [] for t in open_topics}
     if open_topics:
         for a in session.scalars(
-            select(Article).where(Article.topic_id.in_(members)).order_by(day, Article.id)
+            select(Article).where(Article.topic_id.in_(list(members))).order_by(day, Article.id)
         ):
             members[a.topic_id].append(a)
 

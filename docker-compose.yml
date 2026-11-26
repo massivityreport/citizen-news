@@ -37,7 +37,6 @@ services:
     command: ["python", "-m", "app.cli", "run", "--interval-minutes", "${INGEST_INTERVAL_MINUTES:-15}"]
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-citizen}:${POSTGRES_PASSWORD:-citizen_dev_only}@db:5432/${POSTGRES_DB:-citizen_news}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
     depends_on:
       api:
         condition: service_healthy

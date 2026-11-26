@@ -36,3 +36,9 @@ def test_loop_stops_on_event_and_survives_errors(monkeypatch):
 def test_run_rejects_non_positive_interval():
     with pytest.raises(SystemExit):
         cli.main(["run", "--interval-minutes", "0"])
+
+
+def test_invalid_interval_env_gives_clear_error(monkeypatch):
+    monkeypatch.setenv("INGEST_INTERVAL_MINUTES", "abc")
+    with pytest.raises(SystemExit, match="INGEST_INTERVAL_MINUTES"):
+        cli.main(["run"])

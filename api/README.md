@@ -46,6 +46,7 @@ Le titre du sujet est celui de l'article le plus représentatif (le plus proche 
 - Trop **bas** : des sujets distincts fusionnent (le même ministre dans deux affaires différentes).
 - Trop **haut** : un même événement reste éclaté en plusieurs sujets à une seule source, donc invisible.
 - Méthode : lancer `refresh` sur une base vide, parcourir `GET /api/topics/front?limit=50` et repérer, d'une part, les sujets qui mélangent des articles sans rapport (monter le seuil), d'autre part les doublons évidents entre sujets (baisser le seuil). Sur les vrais flux (~350 articles), 0,35 regroupe correctement les articles d'un même événement (10 médias sur une même affaire judiciaire) sans fusion abusive observée.
+- Le TF-IDF est réajusté à chaque exécution sur les articles de la fenêtre (les poids IDF varient donc d'un run à l'autre) ; le résultat reste déterministe pour un état de base et une date donnés. Un article déjà rattaché n'est jamais réévalué : **changer le seuil ne recalcule pas l'existant** et ne vaut que pour les nouveaux articles.
 - Après changement, repartir d'une base vide (`docker compose down -v`) : les rattachements existants ne sont pas recalculés.
 
 ### Endpoints

@@ -89,3 +89,18 @@ def test_failing_feeds_do_not_stop_the_others(session):
     assert {f.name for f in report.failed} == {"Cassé", "Panne"}
     assert report.new_articles == 2
     assert session.scalar(select(func.count()).select_from(Article)) == 2
+
+
+def test_conflict_refreshes_text_only_when_changed_and_keeps_first_date(session):
+    from sqlalchemy import text
+
+    ingest(session, [ALPHA], client=make_client())
+    first = session.scalars(select(Article).where(Article.url == "https://alpha.example/canicule")).one()
+    session.execute(text("UPDATE articles SET title='ancien titre', published_at='2020-01-01' WHERE id=:i"), {"i": first.id})
+    session.commit()
+    report = ingest(session, [ALPHA], client=make_client())
+    session.expire_all()
+    refreshed = session.get(Article, first.id)
+    assert report.new_articles == 0
+    assert refreshed.title.startswith("Canicule")  # changed text refreshed
+    assert refreshed.published_at.year == 2020  # date untouched by the conflict update

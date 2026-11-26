@@ -92,7 +92,7 @@ def parse_feed(content: bytes, now: datetime | None = None) -> list[ParsedArticl
         stamp = entry.get("published_parsed") or entry.get("updated_parsed")
         published = datetime.fromtimestamp(timegm(stamp), UTC) if stamp else None
         if published and published > now:
-            published = now
+            published = now  # a feed date in the future (clock skew) would hide the article from the window
         articles.setdefault(url, ParsedArticle(url, title, summary, published))
     return list(articles.values())
 
@@ -106,18 +106,24 @@ def fetch_feed(client: httpx.Client, url: str) -> bytes:
 
 
 def upsert_articles(session: Session, source_id: int, articles: Sequence[ParsedArticle]) -> int:
-    """Insert articles by URL; an existing URL only refreshes its text (topic is kept).
+    """Insert articles by URL; an existing URL has its title/summary refreshed only if they changed.
+    published_at is deliberately left out of the conflict update: the first date seen is kept, so an
+    article never moves in the clustering window and the topic assignment stays stable.
     Returns the number of newly inserted articles."""
     new = 0
     for a in articles:
-        stmt = (
-            insert(Article)
-            .values(source_id=source_id, url=a.url, title=a.title, summary=a.summary, published_at=a.published_at)
-            .on_conflict_do_update(index_elements=["url"], set_={"title": a.title, "summary": a.summary})
-            # xmax is 0 only for rows that were really inserted (not updated by the conflict clause).
-            .returning(literal_column("(xmax = 0)").label("inserted"))
+        insert_stmt = insert(Article).values(
+            source_id=source_id, url=a.url, title=a.title, summary=a.summary, published_at=a.published_at
         )
-        new += bool(session.execute(stmt).scalar_one())
+        stmt = insert_stmt.on_conflict_do_update(
+            index_elements=["url"],
+            set_={"title": insert_stmt.excluded.title, "summary": insert_stmt.excluded.summary},
+            where=(Article.title.is_distinct_from(insert_stmt.excluded.title))
+            | (Article.summary.is_distinct_from(insert_stmt.excluded.summary)),
+            # xmax = 0 is how PostgreSQL tells an inserted row from one updated by ON CONFLICT: there is
+            # no portable alternative in a single statement. An unchanged conflict returns no row.
+        ).returning(literal_column("(xmax = 0)").label("inserted"))
+        new += bool(session.execute(stmt).scalar_one_or_none())
     return new
 
 

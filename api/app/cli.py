@@ -57,6 +57,16 @@ def run_loop(interval_minutes: float, stop: threading.Event) -> int:
     return 0
 
 
+def _default_interval() -> float:
+    raw = os.environ.get("INGEST_INTERVAL_MINUTES", "")
+    if not raw.strip():
+        return DEFAULT_INTERVAL_MINUTES
+    try:
+        return float(raw)
+    except ValueError:
+        raise SystemExit(f"INGEST_INTERVAL_MINUTES invalide : « {raw} » (nombre de minutes attendu)")
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m app.cli", description="Alimentation en sujets de Citizen News")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -67,7 +77,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     run.add_argument(
         "--interval-minutes",
         type=float,
-        default=float(os.environ.get("INGEST_INTERVAL_MINUTES", DEFAULT_INTERVAL_MINUTES)),
+        default=_default_interval(),
         help=f"pause entre deux cycles (défaut : $INGEST_INTERVAL_MINUTES ou {DEFAULT_INTERVAL_MINUTES})",
     )
     args = parser.parse_args(argv)
