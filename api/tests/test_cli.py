@@ -42,3 +42,49 @@ def test_invalid_interval_env_gives_clear_error(monkeypatch):
     monkeypatch.setenv("INGEST_INTERVAL_MINUTES", "abc")
     with pytest.raises(SystemExit, match="INGEST_INTERVAL_MINUTES"):
         cli.main(["run"])
+
+
+def test_halve_command_applies_the_halving(session):
+    from app.models import Topic
+    from tests.helpers import add_votes
+
+    good, weak = Topic(title="Bon sujet"), Topic(title="Sujet faible")
+    session.add_all([good, weak])
+    session.flush()
+    add_votes(session, good, more=18, not_priority=2)
+    add_votes(session, weak, more=2, not_priority=18)
+    session.commit()
+    assert cli.main(["halve"]) == 0
+    session.expire_all()
+    assert (good.state, good.wave) == ("active", 1)
+    assert (weak.state, weak.wave) == ("reserve", 0)
+    assert cli.main(["halve"]) == 0  # idempotent
+    session.expire_all()
+    assert (good.state, weak.state) == ("active", "reserve")
+
+
+def test_refresh_also_halves(monkeypatch):
+    calls = []
+    monkeypatch.setattr(cli, "run_ingest", lambda: calls.append("ingest") or 0)
+    monkeypatch.setattr(cli, "run_cluster", lambda: calls.append("cluster") or 0)
+    monkeypatch.setattr(cli, "run_halve", lambda: calls.append("halve") or 0)
+    assert cli.run_refresh() == 0
+    assert calls == ["ingest", "cluster", "halve"]
+
+
+def test_refresh_keeps_the_clustering_exit_code_and_still_halves(monkeypatch):
+    calls = []
+    monkeypatch.setattr(cli, "run_ingest", lambda: calls.append("ingest") or 0)
+    monkeypatch.setattr(cli, "run_cluster", lambda: calls.append("cluster") or 3)
+    monkeypatch.setattr(cli, "run_halve", lambda: calls.append("halve") or 0)
+    assert cli.run_refresh() == 3
+    assert calls == ["ingest", "cluster", "halve"]
+
+
+def test_refresh_runs_every_step_when_ingest_fails(monkeypatch):
+    calls = []
+    monkeypatch.setattr(cli, "run_ingest", lambda: calls.append("ingest") or 2)
+    monkeypatch.setattr(cli, "run_cluster", lambda: calls.append("cluster") or 0)
+    monkeypatch.setattr(cli, "run_halve", lambda: calls.append("halve") or 0)
+    assert cli.run_refresh() == 2
+    assert calls == ["ingest", "cluster", "halve"]

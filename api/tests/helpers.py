@@ -61,3 +61,34 @@ class RecordingMailer:
 
 def ask(api, email="a@example.org"):
     return api.post("/api/auth/magic-link", json={"email": email})
+
+
+def add_votes(session, topic, more=0, not_priority=0, unknown=0, prefix="v", hours_ago=None):
+    """Give `topic` that many votes, each from a fresh account (one vote per account and topic)."""
+    from app.models import Account, Vote
+
+    n = session.query(Account).count()
+    plan = ["more"] * more + ["not_priority"] * not_priority + ["unknown"] * unknown
+    accounts = [Account(email=f"{prefix}{n + i}@example.org") for i in range(len(plan))]
+    session.add_all(accounts)
+    session.flush()
+    extra = {} if hours_ago is None else {"created_at": datetime.now(UTC) - timedelta(hours=hours_ago)}
+    session.add_all(Vote(account_id=a.id, topic_id=topic.id, choice=c, **extra) for a, c in zip(accounts, plan))
+    session.flush()
+
+
+def make_topic(session, title, sources, state="new", wave=0, hours_ago=1.0, now=None, **kw):
+    """A topic with one article from each of `sources` (so it is eligible when len(sources) >= 2).
+    `now` defaults to the real clock: eligibility is computed against it."""
+    from app.models import Topic
+
+    now = now or datetime.now(UTC)
+    topic = Topic(
+        title=title, summary=f"Résumé de {title}", state=state, wave=wave,
+        first_seen_at=now - timedelta(hours=hours_ago + 1), updated_at=now - timedelta(hours=hours_ago), **kw,
+    )
+    session.add(topic)
+    session.flush()
+    for source in sources:
+        make_article(session, source, f"{topic.id}-{source.id}", f"{title} ({source.name})", hours_ago=hours_ago, now=now, topic_id=topic.id)
+    return topic

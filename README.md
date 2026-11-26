@@ -35,9 +35,10 @@ Variables d'environnement (voir `.env.example`) :
 | `MAIL_BACKEND` | `console` (défaut) : le lien est écrit dans les logs de l'API, **développement seulement** ; `smtp` : envoi réel |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_STARTTLS`, `MAIL_FROM` | Serveur SMTP (port 587 et STARTTLS par défaut ; `SMTP_HOST` obligatoire avec `smtp`). Le mot de passe ne vient que de l'environnement |
 | `TRUST_PROXY` | `true` derrière un reverse proxy : l'IP cliente est la dernière entrée de `X-Forwarded-For` (sinon l'en-tête est ignoré) |
-| `RATE_LIMIT_*`, `CLAIM_MAX_VOTES` | Limites de débit et plafond du rattachement de votes (voir [api/README.md](api/README.md)) |
+| `DEMO_SEED` | `true` autorise `python -m app.cli seed-demo` (données fictives, développement seulement ; refusé avec `COOKIE_SECURE=true`) |
+| `RATE_LIMIT_*`, `CLAIM_MAX_VOTES` | Limites de débit (dont `RATE_LIMIT_VOTE_PER_ACCOUNT`, 120 votes par minute et par compte) et plafond du rattachement de votes (voir [api/README.md](api/README.md)) |
 
-Fichiers dans `api/config/` : `feeds.yaml` (flux RSS des médias), `clustering.yaml` (seuil de similarité, fenêtre de temps, sources minimales pour la une) et `halving.yaml` (sévérité du halving ; valeurs validées au chargement, hors bornes refusées).
+Fichiers dans `api/config/` : `feeds.yaml` (flux RSS des médias), `clustering.yaml` (seuil de similarité, fenêtre de temps, sources minimales pour la une) et `halving.yaml` (sévérité du halving) et `front.yaml` (seuils et classement de la une) ; valeurs validées au chargement, hors bornes refusées. Le fonctionnement du halving est expliqué dans [docs/halving.md](docs/halving.md).
 
 ## Alimentation en sujets
 
@@ -46,7 +47,16 @@ docker compose run --rm api python -m app.cli refresh   # ingest + cluster, une 
 curl 'http://localhost:8000/api/topics/front?limit=5'
 ```
 
-Commandes `ingest`, `cluster`, `refresh`, `run`, réglage du seuil de regroupement et détail des endpoints : [api/README.md](api/README.md).
+Commandes `ingest`, `cluster`, `halve`, `refresh`, `run`, `seed-demo`, réglage du seuil de regroupement et détail des endpoints : [api/README.md](api/README.md).
+
+## Vote et halving
+
+`POST /api/votes` enregistre (ou remplace) le vote d'un compte sur un sujet. Le worker recalcule ensuite, à chaque cycle, l'état des sujets (`new`, `active`, `reserve`, `emerged`) par Successive Halving ; le flux `GET /api/vote/next` et la une `GET /api/topics/front` s'en servent. Fonctionnement et exemple chiffré : [docs/halving.md](docs/halving.md). Pour voir la une bouger sans attendre de vrais votes :
+
+```bash
+docker compose run --rm -e DEMO_SEED=true api python -m app.cli seed-demo
+curl 'http://localhost:8000/api/topics/front?limit=10'
+```
 
 ## Comptes : connexion par lien magique
 
@@ -89,7 +99,7 @@ docker compose run --rm --user root -v "$PWD/api:/srv/api" api \
 ## Structure
 
 ```
-docker-compose.yml        db (PostgreSQL 16) + api + worker (ingestion périodique) + mailpit (profil `mail`)
+docker-compose.yml        db (PostgreSQL 16) + api + worker (ingestion, regroupement et halving périodiques) + mailpit (profil `mail`)
 api/
   Dockerfile, pyproject.toml, alembic.ini
   alembic/versions/       migrations
@@ -99,8 +109,8 @@ api/
     models/               schéma de données
     routers/              routes HTTP (préfixe /api)
     services/             logique métier (ingestion, regroupement, sujets)
-    cli.py                commandes ingest / cluster / refresh / run
+    cli.py                commandes ingest / cluster / halve / refresh / run / seed-demo
   config/                 settings.py, halving.py/.yaml, feeds.py/.yaml, clustering.py/.yaml
   tests/                  pytest (base PostgreSQL réelle)
-docs/                     brief produit, contrat HTTP
+docs/                     brief produit, contrat HTTP, halving
 ```

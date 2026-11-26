@@ -2,27 +2,6 @@ import pytest
 from sqlalchemy import select
 
 from app.models import Account, Topic, Vote
-from app.services import auth
-from app.deps import SESSION_COOKIE
-
-
-@pytest.fixture
-def topics(session):
-    ts = [Topic(title=f"Sujet {i}") for i in range(3)]
-    session.add_all(ts)
-    session.commit()
-    return [t.id for t in ts]
-
-
-@pytest.fixture
-def logged(client, session):
-    account = Account(email="a@example.org")
-    session.add(account)
-    session.commit()
-    token, _ = auth.create_session(session, account)
-    client.cookies.set(SESSION_COOKIE, token)
-    client.account_id = account.id
-    return client
 
 
 def claim(client, votes):
@@ -107,10 +86,6 @@ def test_claim_rate_limit(logged, topics, monkeypatch):
     finally:
         monkeypatch.undo()
         get_settings.cache_clear()
-
-
-def test_no_direct_vote_endpoint_yet(logged, topics):
-    assert logged.post("/api/votes", json={"topic_id": topics[0], "choice": "more"}).status_code in (404, 405)
 
 
 def test_claim_payload_hard_bound_at_parsing(logged, topics):

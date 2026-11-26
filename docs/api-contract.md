@@ -55,9 +55,11 @@ La une citoyenne. `limit` : entier 1–50, défaut 20.
 { "items": [ { /* TopicCard */, "support": {…}, "reason": {…} } ] }
 ```
 
+Classement : mélange du soutien citoyen et de la fraîcheur. Chaque carte a toujours un `support` et une `reason`. La v1 n'émet que les quatre raisons ci-dessus (pas d'« Alerte minoritaire »). Détail : [halving.md](halving.md).
+
 ### `GET /api/vote/next?count=10&seen=1,2` — public
 
-Prochains sujets à évaluer. `count` : entier 1–20, défaut 10. `seen` : identifiants déjà vus, séparés par des virgules (exclus du résultat). **Résultats masqués** : les éléments sont des `TopicCard` **sans** `support` ni `reason` ni aucun compteur.
+Prochains sujets à évaluer. `count` : entier 1–20, défaut 10. `seen` : identifiants déjà vus, séparés par des virgules (exclus du résultat). Sujets mélangés par le Successive Halving (nouveaux, repêchage, actifs), hors déjà votés si une session est présente (le cookie est facultatif). **Résultats masqués** : les éléments sont des `TopicCard` **sans** `support` ni `reason` ni aucun compteur.
 
 ```json
 { "items": [ { /* TopicCard */ } ] }
@@ -140,7 +142,7 @@ Paramètres actifs du Successive Halving et leur description (page de transparen
 }
 ```
 
-`description` contient une clé par paramètre de `params`, avec un texte en français.
+`description` contient une clé par paramètre de `params`, avec un texte en français (les textes ci-dessus sont des exemples ; ceux de l'API sont plus détaillés).
 
 ## Santé (implémenté)
 

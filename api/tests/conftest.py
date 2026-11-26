@@ -89,3 +89,29 @@ def api(client, mails):
 
     client.app.dependency_overrides[get_mailer] = lambda: mails
     return client
+
+
+@pytest.fixture
+def topics(session):
+    from app.models import Topic
+
+    ts = [Topic(title=f"Sujet {i}") for i in range(3)]
+    session.add_all(ts)
+    session.commit()
+    return [t.id for t in ts]
+
+
+@pytest.fixture
+def logged(client, session):
+    """A client with a valid session cookie; `client.account_id` is the account."""
+    from app.deps import SESSION_COOKIE
+    from app.models import Account
+    from app.services import auth
+
+    account = Account(email="a@example.org")
+    session.add(account)
+    session.commit()
+    token, _ = auth.create_session(session, account)
+    client.cookies.set(SESSION_COOKIE, token)
+    client.account_id = account.id
+    return client

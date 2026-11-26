@@ -79,6 +79,10 @@ class VoteItem(BaseModel):
     choice: Literal["more", "not_priority", "unknown"]
 
 
+class VoteRequest(VoteItem):
+    pass
+
+
 class ClaimRequest(BaseModel):
     # Hard bound checked while parsing; the configurable cap (CLAIM_MAX_VOTES) is enforced in the route.
     votes: list[VoteItem] = Field(max_length=1000)

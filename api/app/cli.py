@@ -1,4 +1,4 @@
-"""Command line: python -m app.cli {ingest,cluster,refresh,run}."""
+"""Command line: python -m app.cli {ingest,cluster,halve,refresh,run,seed-demo}."""
 
 import argparse
 import logging
@@ -10,7 +10,10 @@ from collections.abc import Sequence
 from sqlalchemy.orm import Session
 
 from app.db import get_engine
+from config.settings import get_settings
 from app.services.clustering import cluster
+from app.services.demo import seed_demo
+from app.services.halving import halve
 from app.services.ingest import ingest
 
 log = logging.getLogger("app.cli")
@@ -41,9 +44,36 @@ def run_cluster() -> int:
     return 0
 
 
+def run_halve() -> int:
+    with Session(get_engine()) as session:
+        report = halve(session)
+    log.info(
+        "halving : %d sujets évalués, %d promus (dont %d émergents), %d mis en réserve",
+        report.evaluated, report.promoted, report.emerged, report.demoted,
+    )
+    return 0
+
+
+def run_seed_demo(seed: int = 1) -> int:
+    settings = get_settings()
+    if settings.cookie_secure or not settings.demo_seed:
+        log.error("seed-demo est réservé au développement : définissez DEMO_SEED=true (refusé avec COOKIE_SECURE=true)")
+        return 2
+    with Session(get_engine()) as session:
+        report = seed_demo(session, seed=seed)
+    log.info(
+        "démo : %d sujets, %d comptes, %d votes ; halving : %d promus (dont %d émergents), %d en réserve",
+        report.topics, report.accounts, report.votes, report.halving.promoted, report.halving.emerged, report.halving.demoted,
+    )
+    return 0
+
+
 def run_refresh() -> int:
-    code = run_ingest()
-    return run_cluster() or code
+    # The three steps always run; the exit code is the first non-zero one (no failure is masked).
+    ingested = run_ingest()
+    clustered = run_cluster()
+    halved = run_halve()
+    return ingested or clustered or halved
 
 
 def run_loop(interval_minutes: float, stop: threading.Event) -> int:
@@ -72,7 +102,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("ingest", help="récupère les flux RSS")
     sub.add_parser("cluster", help="regroupe les articles en sujets")
-    sub.add_parser("refresh", help="ingest puis cluster")
+    sub.add_parser("halve", help="recalcule l'état et la vague des sujets d'après les votes")
+    sub.add_parser("refresh", help="ingest, cluster puis halve")
+    demo = sub.add_parser("seed-demo", help="crée des sujets, comptes et votes fictifs (développement, DEMO_SEED=true)")
+    demo.add_argument("--seed", type=int, default=1, help="graine du générateur (défaut 1)")
     run = sub.add_parser("run", help="refresh en boucle")
     run.add_argument(
         "--interval-minutes",
@@ -90,7 +123,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         for sig in (signal.SIGINT, signal.SIGTERM):
             signal.signal(sig, lambda *_: stop.set())
         return run_loop(args.interval_minutes, stop)
-    return {"ingest": run_ingest, "cluster": run_cluster, "refresh": run_refresh}[args.command]()
+    if args.command == "seed-demo":
+        return run_seed_demo(args.seed)
+    return {"ingest": run_ingest, "cluster": run_cluster, "halve": run_halve, "refresh": run_refresh}[args.command]()
 
 
 if __name__ == "__main__":

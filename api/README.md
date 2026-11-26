@@ -5,7 +5,8 @@ Backend FastAPI + PostgreSQL. Contrat HTTP : [`docs/api-contract.md`](../docs/ap
 ## Alimentation en sujets
 
 ```
-flux RSS ──ingest──▶ articles ──cluster──▶ topics ──▶ GET /api/topics/front, GET /api/vote/next
+flux RSS ──ingest──▶ articles ──cluster──▶ topics ◀──halve── votes
+                                              └──▶ GET /api/topics/front, GET /api/vote/next
 ```
 
 ### Commandes
@@ -15,11 +16,12 @@ Dans le conteneur (le service `worker` du compose les lance en boucle) :
 ```bash
 docker compose run --rm api python -m app.cli ingest    # récupère les flux de config/feeds.yaml
 docker compose run --rm api python -m app.cli cluster   # regroupe les articles en sujets
-docker compose run --rm api python -m app.cli refresh   # ingest puis cluster
+docker compose run --rm api python -m app.cli halve     # recalcule état et vague des sujets d'après les votes
+docker compose run --rm api python -m app.cli refresh   # ingest, cluster puis halve
 docker compose run --rm api python -m app.cli run --interval-minutes 15   # refresh en boucle
 ```
 
-Le service `worker` exécute `run`. Intervalle : variable `INGEST_INTERVAL_MINUTES` (défaut 15). Un flux en erreur (réseau, 404, XML invalide) est consigné dans les logs et n'arrête pas les autres ; `ingest` ne retourne un code d'erreur que si **aucun** flux n'a pu être lu. Toutes les commandes sont idempotentes : les relancer ne duplique rien.
+Le service `worker` exécute `run`. Intervalle : variable `INGEST_INTERVAL_MINUTES` (défaut 15). Un flux en erreur (réseau, 404, XML invalide) est consigné dans les logs et n'arrête pas les autres ; `ingest` ne retourne un code d'erreur que si **aucun** flux n'a pu être lu. `halve` n'a besoin d'aucun accès réseau. Toutes les commandes sont idempotentes : les relancer ne duplique rien.
 
 ### `config/feeds.yaml`
 
@@ -51,8 +53,23 @@ Le titre du sujet est celui de l'article le plus représentatif (le plus proche 
 
 ### Endpoints
 
-- `GET /api/topics/front?limit=20` : sujets ayant au moins `min_sources_for_front` médias distincts, du plus récemment mis à jour au plus ancien. Réponse mise en cache 5 secondes ; 2 requêtes SQL (sujets, puis articles de ces sujets). `sources` contient une entrée par média (son article le plus récent). **Provisoire** : `support` vaut `{"level": "low", "votes_count": 0}` et `reason` vaut `emerging` ; ce calcul est isolé dans `app/services/support.py` (`support_for`), que la tâche votes/halving remplacera.
-- `GET /api/vote/next?count=10&seen=1,2` : sujets éligibles en ordre aléatoire, hors `seen`, sans `support` ni `reason`. **Provisoire** : le halving remplacera le tirage aléatoire.
+- `GET /api/topics/front?limit=20` : la une citoyenne. Sujets actifs dans la fenêtre, hors `reserve`, avec au moins `min_sources_for_front` médias distincts **ou** la raison `under_the_radar`, et au moins `ranking.min_votes` votes ou récents ; classés par un mélange du score collectif et de la fraîcheur ; chaque carte a un `support` (`level`, `votes_count`) et une `reason` réels. Réponse mise en cache 5 secondes ; 4 requêtes SQL au plus. Règles et seuils : [`docs/halving.md`](../docs/halving.md) et `config/front.yaml`.
+- `GET /api/vote/next?count=10&seen=1,2` : flux de vote piloté par le halving (nouveaux, repêchage, actifs, proches de l'émergence ; voir [`docs/halving.md`](../docs/halving.md)), hors `seen` et, avec une session, hors sujets déjà votés ; sans `support` ni `reason` ni compteur. Utilisable sans compte.
+- `POST /api/votes {topic_id, choice}` (session) : voir « Votes » ci-dessous. `GET /api/halving/config` : paramètres du halving et leur description française (public).
+
+## Votes et Successive Halving
+
+`POST /api/votes` : un vote par compte et par sujet (`UNIQUE(account_id, topic_id)`), modifiable : un `INSERT … ON CONFLICT DO UPDATE` remplace le choix et met `updated_at` à jour. Réponse `{topic_id, choice}` et rien d'autre (résultats masqués avant le vote). `401` sans session, `404` sujet inconnu, `422` choix invalide, `429` + `Retry-After` au-delà de `RATE_LIMIT_VOTE_PER_ACCOUNT` votes (120) par `RATE_LIMIT_VOTE_WINDOW_SECONDS` (60 s) et par compte.
+
+Le **halving** (`app/services/halving.py`, fonction pure `decide` + `halve` qui écrit en base) tourne dans le worker, jamais dans la requête de vote : `python -m app.cli halve`, lancé aussi à chaque cycle `refresh`. Idempotent et déterministe. Il met à jour `topics.state`, `topics.wave`, `state_changed_at`, `evaluated_at`, `votes_at_eval` ; **jamais `updated_at`**, qui reste la date du dernier article (le modèle n'a plus d'`onupdate` sur cette colonne ; un test le garantit). Algorithme complet, exemple chiffré et paramètres : [`docs/halving.md`](../docs/halving.md).
+
+### Données de démonstration
+
+```bash
+docker compose run --rm -e DEMO_SEED=true api python -m app.cli seed-demo [--seed 1]
+```
+
+Crée des sujets « [Démo] … », trois médias fictifs, 120 comptes `demo-N@demo.invalid` et leurs votes (profils : priorité commune, mobilisation, sous les radars, émergent, peu soutenu, nouveau), puis lance le halving. Relancer remplace les données de démo. Refusé sans `DEMO_SEED=true` et avec `COOKIE_SECURE=true`.
 
 ## Comptes et sessions
 
@@ -84,32 +101,38 @@ GET /api/me · POST /api/auth/logout · POST /api/votes/claim · GET /api/votes/
 | `POST /api/auth/magic-link` | e-mail normalisé (haché en mémoire) | `RATE_LIMIT_MAGIC_LINK_PER_EMAIL` (5) |
 | `POST /api/auth/verify` | IP | `RATE_LIMIT_VERIFY_PER_IP` (30) |
 | `POST /api/votes/claim` | compte | `RATE_LIMIT_CLAIM_PER_ACCOUNT` (30) |
+| `POST /api/votes` | compte | `RATE_LIMIT_VOTE_PER_ACCOUNT` (120) |
 
-Fenêtre : `RATE_LIMIT_WINDOW_SECONDS` (3600). Ces variables sont transmises à l'API par le compose.
+Fenêtre : `RATE_LIMIT_WINDOW_SECONDS` (3600) ; pour les votes directs, `RATE_LIMIT_VOTE_WINDOW_SECONDS` (60). Ces variables sont transmises à l'API par le compose.
 
 **Limites connues** : la limite par e-mail est aussi un verrou. Quelqu'un qui connaît l'adresse d'une victime peut épuiser ses 5 demandes et l'empêcher de recevoir un lien pendant une heure (compromis assumé : sans cela, l'API servirait à inonder une boîte de courriels). Derrière un reverse proxy **sans** `TRUST_PROXY=true`, tous les clients partagent l'IP du proxy et donc la limite par IP (20/h) : un seul abus bloque tout le monde ; avec `TRUST_PROXY=true`, la limite redevient individuelle. L'IP est celle de la connexion ; avec `TRUST_PROXY=true`, c'est la **dernière** entrée de `X-Forwarded-For` (celle qu'ajoute le proxy de confiance : les entrées précédentes sont falsifiables). N'activez `TRUST_PROXY` que derrière un proxy qui écrase ou complète cet en-tête, sinon n'importe qui contourne la limite.
 
 ### Votes anonymes
 
-Les votes faits sans compte restent dans le navigateur : rien n'est stocké côté serveur avant `claim`, donc ils ne comptent pas dans le classement. `POST /api/votes/claim {votes:[{topic_id,choice}]}` : un vote déjà présent sur le sujet n'est jamais écrasé (contrainte `UNIQUE(account_id, topic_id)` + `ON CONFLICT DO NOTHING`), les sujets inconnus sont ignorés, un sujet répété dans le lot compte une fois (le premier gagne), `claimed` est le nombre de votes réellement créés. Un lot de plus de `CLAIM_MAX_VOTES` (200, au plus 1000) votes est refusé en `422` (rien n'est enregistré) ; au-delà de 1000, le refus intervient dès la lecture de la requête. `POST /api/votes` (vote direct) viendra avec la tâche votes/halving.
+Les votes faits sans compte restent dans le navigateur : rien n'est stocké côté serveur avant `claim`, donc ils ne comptent pas dans le classement. `POST /api/votes/claim {votes:[{topic_id,choice}]}` : un vote déjà présent sur le sujet n'est jamais écrasé (contrainte `UNIQUE(account_id, topic_id)` + `ON CONFLICT DO NOTHING`), les sujets inconnus sont ignorés, un sujet répété dans le lot compte une fois (le premier gagne), `claimed` est le nombre de votes réellement créés. Un lot de plus de `CLAIM_MAX_VOTES` (200, au plus 1000) votes est refusé en `422` (rien n'est enregistré) ; au-delà de 1000, le refus intervient dès la lecture de la requête.
 
 Toute erreur de validation (`422`) renvoie `{"detail": "Requête invalide (champ : …)"}` comme le contrat le demande.
 
 ### Code
 
 ```
-app/cli.py                  ingest / cluster / refresh / run
+app/cli.py                  ingest / cluster / halve / refresh / run / seed-demo
 app/services/ingest.py      récupération (httpx), parsing (feedparser), upsert
 app/services/clustering.py  TF-IDF + similarité cosinus
 app/services/topics.py      éligibilité des sujets, construction des TopicCard
-app/services/support.py     support/raison (provisoire)
+app/services/halving.py     Successive Halving (score, vagues, états)
+app/services/voteflow.py    sélection du flux de vote
+app/services/support.py     niveau de soutien et raison d'une carte
+app/services/front.py       éligibilité et classement de la une
+app/services/demo.py        données fictives (seed-demo)
 app/routers/topics.py       /api/topics/front, /api/vote/next
 app/routers/auth.py         /api/auth/*, /api/me
-app/routers/votes.py        /api/votes/claim, /api/votes/mine
+app/routers/votes.py        /api/votes, /api/votes/claim, /api/votes/mine
+app/routers/halving.py      /api/halving/config
 app/services/auth.py        jetons, comptes, sessions
 app/services/mailer.py      Mailer (SMTP, console)
 app/services/ratelimit.py   limitation de débit
 app/deps.py                 current_account, IP cliente
-config/feeds.py, clustering.py   chargeurs validés
+config/feeds.py, clustering.py, halving.py, front.py   chargeurs validés
 tests/fixtures/             flux RSS d'exemple (aucun accès réseau dans les tests)
 ```

@@ -1,16 +1,46 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from app.db import get_session
 from app.deps import current_account
 from app.models.entities import Account, Topic, Vote
-from app.schemas import ClaimRequest, ClaimResponse, MyVotes, VoteItem
+from app.schemas import ClaimRequest, ClaimResponse, MyVotes, VoteItem, VoteRequest
 from app.services.ratelimit import RateLimiter, enforce, get_rate_limiter
 from config.settings import get_settings
 
 router = APIRouter()
+
+
+@router.post("/votes", response_model=VoteItem)
+def vote(
+    body: VoteRequest,
+    account: Account = Depends(current_account),
+    db: Session = Depends(get_session),
+    limiter: RateLimiter = Depends(get_rate_limiter),
+) -> VoteItem:
+    """Record or replace the account's vote on a topic (one vote per account and topic: the last one wins).
+    Deliberately returns nothing but the vote itself: results stay hidden until after the vote."""
+    settings = get_settings()
+    enforce(
+        limiter,
+        f"vote:account:{account.id}",
+        settings.rate_limit_vote_per_account,
+        settings.rate_limit_vote_window_seconds,
+    )
+    if db.scalar(select(Topic.id).where(Topic.id == body.topic_id)) is None:
+        raise HTTPException(status_code=404, detail="Sujet introuvable")
+    db.execute(
+        pg_insert(Vote)
+        .values(account_id=account.id, topic_id=body.topic_id, choice=body.choice)
+        .on_conflict_do_update(
+            constraint="uq_votes_account_id_topic_id",
+            set_={"choice": body.choice, "updated_at": func.now()},
+        )
+    )
+    db.commit()
+    return VoteItem(topic_id=body.topic_id, choice=body.choice)
 
 
 @router.post("/votes/claim", response_model=ClaimResponse)
