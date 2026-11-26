@@ -1,6 +1,6 @@
 # API Citizen News
 
-Backend FastAPI + PostgreSQL. Contrat HTTP : [`docs/api-contract.md`](../docs/api-contract.md). Lancement, variables d'environnement et tests : [README racine](../README.md).
+Backend FastAPI + PostgreSQL. Contrat HTTP : [`docs/api-contract.md`](../docs/api-contract.md). Lancement et variables d'environnement : [README racine](../README.md). Tests : [section Tests](#tests).
 
 ## Alimentation en sujets
 
@@ -136,3 +136,42 @@ app/deps.py                 current_account, IP cliente
 config/feeds.py, clustering.py, halving.py, front.py   chargeurs validés
 tests/fixtures/             flux RSS d'exemple (aucun accès réseau dans les tests)
 ```
+
+## Tests
+
+```bash
+scripts/test-api.sh                         # depuis la racine du dépôt : build si besoin, Postgres léger, pytest, arrêt de Postgres
+scripts/test-api.sh tests/test_auth.py      # un fichier ; les arguments vont à pytest (-k, -x, …)
+# équivalent sans le script :
+docker compose --profile test run --rm api-test pytest -q [tests/test_auth.py]
+docker compose --profile test rm -sf db-test   # arrêter Postgres ensuite
+```
+
+- Cible `test` du `api/Dockerfile` (l'image `api`, utilisée par `api` et `worker`, n'a pas pytest). Le code (`./api`) est monté en **lecture seule** sur `/srv/api` : modifier le code ne demande aucun rebuild ; seul un changement de `pyproject.toml` ou de `constraints.txt` réinstalle les dépendances.
+- `db-test` : `postgres:16` (même image que `db`), `shared_buffers=16MB`, `max_connections=30`, `fsync=off`, données en tmpfs ; environ 50 Mio au repos. Il n'est lancé que par le profil `test` et ne touche pas au volume `pgdata`.
+- Dépendances : roues précompilées seulement (`pip install --only-binary=:all: --no-cache-dir`), versions exactes dans `constraints.txt` (transitives comprises, pytest compris). numpy, scipy et scikit-learn sont **indispensables** : `app/services/clustering.py` les importe et l'API les charge au démarrage ; ils pèsent l'essentiel de l'image (≈ 380 Mio installés).
+- Image de base : `python:3.12-slim` + roues précompilées, plutôt qu'une image publique contenant déjà numpy/scipy/scikit-learn (comparaison sur les tailles publiées, 2026-11-26) : il n'existe pas d'image officielle avec ces paquets ; `jupyter/scipy-notebook` fait ≈ 1,25 Go compressé et ses tags récents sont en Python 3.11 ; les autres images « scikit-learn » du Docker Hub sont communautaires et invérifiables. Les roues (≈ 380 Mio installés) sont plus légères et plus sûres.
+- Mettre à jour les dépendances : élargir les bornes de `pyproject.toml`, puis régénérer `constraints.txt` depuis une image reconstruite sans contraintes (`pip install -r` sans `-c`, puis `pip freeze`), relancer les tests.
+
+### Mémoire mesurée
+
+Pic mémoire du container entier (anonyme + noyau, cache de pages exclu) au-dessus de son état de repos, ce container ayant au repos ≈ 500–560 Mio (claude, dockerd, containerd) ; mesures du 2026-11-26, Python 3.12-slim, cache de construction vide pour les builds :
+
+| Commande | Avant (pip sans contraintes, pytest dans `api`) | Après |
+|---|---|---|
+| `docker compose build --no-cache` (dépendances installées par pip) | +190 Mio (36 s) | +165 Mio (59 s, `api-test`) |
+| `docker compose build api worker` avec couches en cache | — | +75 Mio (23 s) |
+| Suite complète (221 tests) | +196 Mio (20 s) | +246 Mio (26 s) avec Postgres léger |
+| Un fichier (`tests/test_auth.py`, 23 tests) | — | +193 Mio (8 s) |
+
+Postgres léger : ≈ 50 Mio au repos (`docker stats`). Je n'ai pas mesuré la configuration par défaut de Postgres sous la même charge, donc je ne chiffre pas son gain. Le gros du pic est le processus pytest (≈ 150 Mio de RSS une fois numpy, scipy et scikit-learn importés, contre ≈ 65 Mio pour l'API seule) et le moteur Docker pendant le build. Les mesures « avant » et « après » sont du même ordre : le gain est surtout un build sans compilation, reproductible (versions exactes) et qui ne réinstalle rien quand seul le code change.
+
+**Limite non vérifiée** : ces mesures viennent d'un container de 2 Go, pas de 1 Go sans swap. Un total de ≈ 770 Mio (repos ≈ 520 + 250) tient sous 1 Go sur le papier, avec ≈ 250 Mio de marge, mais le repos d'un container varie (session `claude`, navigateur, autres processus).
+
+**`/tmp` compte dans la limite** : dans un container de 1 Go, `/tmp` est un tmpfs imputé à la mémoire (des restes de pip/venv de plus de 400 Mio ont été observés chez le Reviewer). Vider `/tmp` avant de lancer (`find /tmp -mindepth 1 -delete`), et dans un container de 1 Go ne pas faire build et tests ensemble : construire d'abord, puis tester.
+
+**Mémoire recommandée : 1,5 Go** ; en dessous de ≈ 1 Go la suite ne passe pas de façon fiable. Ne jamais lancer le build et les tests en même temps. Si la limite est atteinte :
+
+1. Lancer fichier par fichier : `for f in api/tests/test_*.py; do scripts/test-api.sh tests/$(basename $f) || break; done` (le pic d'un fichier, +193 Mio, est proche de celui de la suite, +246 Mio : l'économie est modeste).
+2. Construire l'image seule avant de lancer les tests (`docker compose --profile test build api-test`), sans autre commande lourde en parallèle.
+3. Si un build à 1 Go échoue malgré tout, c'est que le container n'a pas la marge : augmenter la mémoire du Reviewer.

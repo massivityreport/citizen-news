@@ -79,13 +79,14 @@ Les e-mails arrivent dans l'interface de mailpit, <http://localhost:8025> (SMTP 
 
 ## Tests
 
-Les tests utilisent une vraie base PostgreSQL : une base jetable `citizen_news_test` est créée sur le service `db`, migrée, puis supprimée.
+Les tests utilisent une vraie base PostgreSQL (une base jetable `citizen_news_test` est créée, migrée, puis supprimée), dans un service `db-test` léger (profil `test`, données en tmpfs), séparé de `db`.
 
 ```bash
-docker compose run --rm api pytest
+scripts/test-api.sh                      # toute la suite (221 tests)
+scripts/test-api.sh tests/test_auth.py   # un seul fichier
 ```
 
-Après une modification du code, reconstruire l'image (`docker compose build api`) : le code est copié dans l'image, pas monté.
+Le code est monté en lecture seule : aucun rebuild après une modification. Mémoire nécessaire, pics mesurés et marche à suivre si elle manque : [api/README.md](api/README.md#tests).
 
 ## Migrations
 
