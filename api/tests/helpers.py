@@ -61,3 +61,16 @@ class RecordingMailer:
 
 def ask(api, email="a@example.org"):
     return api.post("/api/auth/magic-link", json={"email": email})
+
+
+def add_votes(session, topic, more=0, not_priority=0, unknown=0, prefix="v"):
+    """Give `topic` that many votes, each from a fresh account (one vote per account and topic)."""
+    from app.models import Account, Vote
+
+    n = session.query(Account).count()
+    plan = ["more"] * more + ["not_priority"] * not_priority + ["unknown"] * unknown
+    accounts = [Account(email=f"{prefix}{n + i}@example.org") for i in range(len(plan))]
+    session.add_all(accounts)
+    session.flush()
+    session.add_all(Vote(account_id=a.id, topic_id=topic.id, choice=c) for a, c in zip(accounts, plan))
+    session.flush()

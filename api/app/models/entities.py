@@ -48,11 +48,15 @@ class Topic(Base):
     title: Mapped[str] = mapped_column(Text)
     summary: Mapped[str] = mapped_column(Text, server_default="")
     first_seen_at: Mapped[datetime] = _now()
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
-    )
+    # Freshness of the topic = date of its latest article, set explicitly by the clustering. There is NO
+    # onupdate here on purpose: the halving rewrites state/wave and must not touch this column.
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     state: Mapped[str] = mapped_column(String(16), server_default="new")
     wave: Mapped[int] = mapped_column(Integer, server_default="0")
+    # Halving bookkeeping (see app/services/halving.py).
+    state_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # last state/wave change
+    evaluated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # last wave decision
+    votes_at_eval: Mapped[int] = mapped_column(Integer, server_default="0")  # votes count at that decision
     created_at: Mapped[datetime] = _now()
 
 
