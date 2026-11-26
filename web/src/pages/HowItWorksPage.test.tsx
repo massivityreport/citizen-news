@@ -23,7 +23,7 @@ describe("Comment ça marche", () => {
     expect(await screen.findByRole("heading", { level: 1, name: "Comment ça marche" })).toBeInTheDocument();
     expect(screen.getByText(/De quoi devrions-nous parler/)).toBeInTheDocument();
     expect(screen.getByText(/Première vague aléatoire/)).toBeInTheDocument();
-    expect(screen.getByText(/jamais éliminé définitivement/)).toBeInTheDocument();
+    expect(screen.getByText(/écarté sur un seul vote/)).toBeInTheDocument();
     for (const r of ["Priorité commune", "Forte mobilisation", "Sous les radars", "Sujet émergent"]) {
       expect(screen.getByText(r)).toBeInTheDocument();
     }

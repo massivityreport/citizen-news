@@ -32,7 +32,7 @@ const STEPS = [
   ["Sélection", "une fois assez de votes réunis, les sujets les plus soutenus sont conservés pour la vague suivante."],
   ["Accélération", "les sujets conservés sont montrés à davantage de monde pour confirmer ou corriger leur score."],
   ["Réserve", "les sujets moins soutenus ne disparaissent pas : ils passent en réserve et reçoivent moins d’attention."],
-  ["Repêchage périodique", "de temps en temps, des sujets de la réserve sont de nouveau proposés. Aucun sujet n’est jamais éliminé définitivement."],
+  ["Repêchage périodique", "de temps en temps, des sujets de la réserve sont de nouveau proposés. Aucun sujet n’est écarté sur un seul vote : un sujet en réserve peut revenir tant qu’il reste d’actualité."],
 ];
 
 function Params({ config }: { config: HalvingConfig }) {
@@ -123,7 +123,8 @@ export default function HowItWorksPage() {
       <section aria-labelledby="confidentialite">
         <h2 id="confidentialite">Vos données</h2>
         <p>
-          Nous ne conservons que <strong>votre adresse e-mail</strong> et <strong>vos votes</strong>. Vous pouvez voter sans compte :
+          Nous ne conservons que <strong>votre adresse e-mail</strong> et <strong>vos votes</strong>. L’adresse saisie pour
+          recevoir un lien n’est gardée que le temps de validité du lien si le compte n’existe pas encore. Vous pouvez voter sans compte :
           vos choix restent alors dans votre navigateur jusqu’à votre <Link to="/connexion">connexion</Link>, par lien envoyé par
           e-mail, sans mot de passe.
         </p>

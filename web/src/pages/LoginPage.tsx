@@ -113,9 +113,8 @@ export default function LoginPage() {
     );
   } else if (me.isPending) {
     body = <p role="status">Chargement…</p>;
-  } else if (me.data) {
-    body = <Account email={me.data.email} />;
   } else {
+    // Lien invalide/expiré : le message s'affiche aussi si l'on est déjà connecté.
     body = (
       <>
         {phase?.kind === "invalid" && (
@@ -128,7 +127,7 @@ export default function LoginPage() {
             La vérification n’a pas pu aboutir pour le moment. Demandez un nouveau lien ou réessayez plus tard.
           </p>
         )}
-        <MagicLinkForm />
+        {me.data ? <Account email={me.data.email} /> : <MagicLinkForm />}
       </>
     );
   }
@@ -234,7 +233,7 @@ function MagicLinkForm() {
     return (
       <div>
         <p role="status" ref={sentRef} tabIndex={-1} className={styles.notice}>
-          Si cette adresse est valide, un lien de connexion vient de partir. Il est valable 15 minutes.
+          Si cette adresse est valide, un lien de connexion vient de partir. Il est valable peu de temps.
         </p>
         <button type="button" className={styles.link} onClick={() => setSent(false)}>
           Utiliser une autre adresse

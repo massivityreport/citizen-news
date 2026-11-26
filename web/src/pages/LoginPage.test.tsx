@@ -59,7 +59,7 @@ describe("Formulaire de connexion", () => {
     renderLogin();
     await userEvent.type(await screen.findByLabelText("Adresse e-mail"), EMAIL);
     await userEvent.click(screen.getByRole("button", { name: "Recevoir un lien de connexion" }));
-    const status = await screen.findByText("Si cette adresse est valide, un lien de connexion vient de partir. Il est valable 15 minutes.");
+    const status = await screen.findByText("Si cette adresse est valide, un lien de connexion vient de partir. Il est valable peu de temps.");
     expect(status).toHaveAttribute("role", "status");
     await waitFor(() => expect(status).toHaveFocus());
     expect(bodiesOf(fn, "POST /api/auth/magic-link")).toEqual([{ email: EMAIL }]);
@@ -130,6 +130,15 @@ describe("Vérification du lien", () => {
     expect(screen.getByLabelText("Adresse e-mail")).toBeInTheDocument();
     expect(screen.getByTestId("loc")).toHaveTextContent(/^\/connexion$/);
     expect(readLocalVotes()).toHaveLength(1);
+  });
+
+  it("déjà connecté avec un lien invalide : message affiché dans la vue connectée", async () => {
+    session({ "POST /api/auth/verify": () => res(400, { detail: "x" }) }, true);
+    renderLogin("/connexion?token=vieux");
+    expect(await screen.findByRole("alert")).toHaveTextContent("Ce lien n’est plus valable : demandez-en un nouveau.");
+    expect(await main().findByText(EMAIL)).toBeInTheDocument();
+    expect(main().getByRole("button", { name: "Se déconnecter" })).toBeInTheDocument();
+    expect(screen.getByTestId("loc")).toHaveTextContent(/^\/connexion$/);
   });
 
   it("n'appelle verify qu'une fois en StrictMode (jeton à usage unique)", async () => {
