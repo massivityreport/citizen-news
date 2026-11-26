@@ -32,7 +32,7 @@ Dans le mock, toute `POST /api/auth/verify` avec un token non vide ouvre une ses
 
 ## Docker
 
-`web/Dockerfile` construit le site statique et le sert avec nginx (port 80) ; `nginx.conf` proxifie `/api/` vers `http://api:8000` et gère le repli SPA.
+`web/Dockerfile` construit le site statique et le sert avec nginx (port 80) ; `nginx.conf` proxifie `/api/` vers `http://api:8000` et gère le repli SPA. Le jeton du lien magique est dans l'URL : nginx envoie `Referrer-Policy: no-referrer` et journalise `$uri` (sans query string) ; un proxy placé devant doit faire de même.
 
 ```sh
 docker build -t citizen-news-web web
