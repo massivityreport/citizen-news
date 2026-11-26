@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import type { VoteChoice } from "../api/types";
 import { useMe } from "../api/hooks";
+import { TopicImage } from "../components/TopicImage";
 import { SourceList } from "../components/SourceList";
 import topic from "../components/Topic.module.css";
 import { usePageTitle } from "../components/usePageTitle";
@@ -76,6 +77,7 @@ export default function PlayPage() {
 
       {card && (
         <article key={card.id} className={`${topic.card} ${styles.card}`} aria-labelledby="vote-title">
+          <TopicImage url={card.image_url} title={card.title} />
           <p className={styles.progress}>Sujet n° {deck.position}</p>
           <h2 id="vote-title" ref={focusRef} tabIndex={-1}>{card.title}</h2>
           <p className={topic.summary}>{card.summary}</p>

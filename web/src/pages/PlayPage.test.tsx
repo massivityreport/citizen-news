@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderApp } from "../test/utils";
 import type { TopicCard } from "../api/types";
@@ -9,6 +9,7 @@ const card = (id: number, over: Partial<TopicCard> = {}): TopicCard => ({
   id,
   title: `Sujet ${id}`,
   summary: `Résumé ${id}`,
+  image_url: null,
   sources: [{ name: "Le Monde", url: "https://example.org/a", title: "Titre", published_at: new Date().toISOString() }],
   first_seen_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
@@ -57,6 +58,19 @@ describe("Flux de vote /jouer", () => {
     expect(screen.getByRole("button", { name: "Ce n’est pas prioritaire" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Je ne sais pas / pas assez d’informations" })).toBeInTheDocument();
     expect(screen.queryByText(/Soutien|votes?\b|%/)).toBeNull();
+  });
+
+  it("affiche l'image de la carte du vote et la retire si elle est cassée", async () => {
+    stubApi({ me: true, batches: [[card(1, { image_url: "https://img.example.org/v.jpg" }), card(2)]] });
+    renderApp("/jouer");
+    const img = await screen.findByRole("img", { name: "Illustration : Sujet 1" });
+    expect(img).toHaveAttribute("src", "https://img.example.org/v.jpg");
+    expect(img).toHaveAttribute("loading", "lazy");
+    expect(img).toHaveAttribute("referrerpolicy", "no-referrer");
+    fireEvent.error(img);
+    expect(screen.queryByRole("img")).toBeNull();
+    expect(screen.getByRole("heading", { name: "Sujet 1" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Il faut davantage en parler" })).toBeInTheDocument();
   });
 
   it.each([
