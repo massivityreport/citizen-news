@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"><channel><title>Alpha</title>
+<item><title>Réforme des retraites : le gouvernement engage un nouveau round de discussions</title>
+<link>https://alpha.example/retraites-1</link>
+<description><![CDATA[<p>Le gouvernement &amp; les syndicats se retrouvent <b>lundi</b> pour discuter des retraites.</p><script>x()</script>]]></description>
+<pubDate>Wed, 25 Nov 2026 10:00:00 GMT</pubDate></item>
+<item><title>Canicule : vigilance orange dans le sud de la France</title>
+<link>https://alpha.example/canicule</link>
+<description>Météo-France place douze départements en vigilance orange.</description>
+<pubDate>Wed, 25 Nov 2026 11:00:00 GMT</pubDate></item>
+<item><title>Sans lien</title><description>pas de lien</description></item>
+<item><title>Lien non http</title><link>javascript:alert(1)</link></item>
+<item><title>Doublon dans le même flux</title><link>https://alpha.example/canicule</link></item>
+</channel></rss>
