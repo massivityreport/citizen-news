@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -9,6 +11,10 @@ from config.settings import get_settings
 
 def create_app() -> FastAPI:
     settings = get_settings()
+    if settings.mail_backend == "console":
+        logging.getLogger("app.mail").warning(
+            "MAIL_BACKEND=console: login links are written to the logs instead of being e-mailed. Development only."
+        )
     app = FastAPI(title="Citizen News API", version="0.1.0")
     app.add_middleware(
         CORSMiddleware,

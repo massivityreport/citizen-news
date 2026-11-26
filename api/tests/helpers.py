@@ -1,5 +1,6 @@
 """Test data builders."""
 
+import re
 from datetime import UTC, datetime, timedelta
 
 from app.models.entities import Article, MediaSource
@@ -43,3 +44,20 @@ def make_article(session, source, n, title, summary="", hours_ago=1.0, now=NOW, 
     session.add(a)
     session.flush()
     return a
+
+
+class RecordingMailer:
+    """Stands in for the Mailer: records messages instead of sending them."""
+
+    def __init__(self):
+        self.sent: list[tuple[str, str, str]] = []
+
+    def send(self, to, subject, body):
+        self.sent.append((to, subject, body))
+
+    def last_token(self) -> str:
+        return re.search(r"/connexion\?token=([\w-]+)", self.sent[-1][2]).group(1)
+
+
+def ask(api, email="a@example.org"):
+    return api.post("/api/auth/magic-link", json={"email": email})

@@ -78,3 +78,17 @@ def test_get_mailer_follows_backend(monkeypatch):
 def test_login_message_contains_link():
     subject, body = mailer.login_message("http://front/connexion?token=t", 15)
     assert "http://front/connexion?token=t" in body and "15 minutes" in body and subject
+
+
+def test_console_backend_refused_with_secure_cookies():
+    with pytest.raises(ValueError, match="MAIL_BACKEND=console"):
+        _settings(mail_backend="console", cookie_secure=True)
+    _settings(mail_backend="smtp", smtp_host="h", cookie_secure=True)  # fine
+
+
+def test_console_backend_warns_at_startup(caplog, database_url):
+    from app.main import create_app
+
+    with caplog.at_level(logging.WARNING, logger="app.mail"):
+        create_app()
+    assert "MAIL_BACKEND=console" in caplog.text and "Development only" in caplog.text

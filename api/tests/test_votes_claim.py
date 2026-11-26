@@ -111,3 +111,8 @@ def test_claim_rate_limit(logged, topics, monkeypatch):
 
 def test_no_direct_vote_endpoint_yet(logged, topics):
     assert logged.post("/api/votes", json={"topic_id": topics[0], "choice": "more"}).status_code in (404, 405)
+
+
+def test_claim_payload_hard_bound_at_parsing(logged, topics):
+    r = claim(logged, [{"topic_id": topics[0], "choice": "more"}] * 1001)
+    assert r.status_code == 422 and isinstance(r.json()["detail"], str)

@@ -39,6 +39,7 @@ def magic_link(
     window = settings.rate_limit_window_seconds
     enforce(limiter, f"magic-link:ip:{client_ip(request)}", settings.rate_limit_magic_link_per_ip, window)
     enforce(limiter, f"magic-link:email:{email_key(body.email)}", settings.rate_limit_magic_link_per_email, window)
+    auth.purge_expired(db)  # login_tokens hold e-mail addresses: do not wait for a successful verify
     token = auth.create_login_token(db, body.email)
     background.add_task(
         _send_login_email, mailer, body.email, auth.login_link(token), settings.login_token_ttl_minutes

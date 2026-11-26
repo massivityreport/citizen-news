@@ -2,7 +2,7 @@ import pytest
 
 from app.services.ratelimit import InMemoryRateLimiter, enforce, get_rate_limiter
 from fastapi import HTTPException
-from tests.test_auth import api, ask, mails  # noqa: F401  (fixtures)
+from tests.helpers import ask
 
 
 class Clock:
@@ -57,7 +57,7 @@ def test_enforce_raises_429_with_retry_after():
     assert e.value.status_code == 429 and e.value.headers["Retry-After"] == "90"
 
 
-def test_magic_link_per_email_limit(api, mails):  # noqa: F811
+def test_magic_link_per_email_limit(api, mails):
     for _ in range(5):
         assert ask(api, "a@example.org").status_code == 202
     r = ask(api, "A@Example.org ")  # same address after normalization
@@ -67,13 +67,13 @@ def test_magic_link_per_email_limit(api, mails):  # noqa: F811
     assert ask(api, "b@example.org").status_code == 202
 
 
-def test_magic_link_per_ip_limit(api, mails):  # noqa: F811
+def test_magic_link_per_ip_limit(api, mails):
     for i in range(20):
         assert ask(api, f"u{i}@example.org").status_code == 202
     assert ask(api, "u99@example.org").status_code == 429
 
 
-def test_limit_applies_to_known_and_unknown_alike(api, mails, session):  # noqa: F811
+def test_limit_applies_to_known_and_unknown_alike(api, mails, session):
     from app.models import Account
 
     session.add(Account(email="known@example.org"))
@@ -82,7 +82,7 @@ def test_limit_applies_to_known_and_unknown_alike(api, mails, session):  # noqa:
     assert codes == [202] * 5 + [429]
 
 
-def test_verify_limit(api, monkeypatch):  # noqa: F811
+def test_verify_limit(api, monkeypatch):
     from config.settings import get_settings
 
     monkeypatch.setenv("RATE_LIMIT_VERIFY_PER_IP", "2")
@@ -96,7 +96,7 @@ def test_verify_limit(api, monkeypatch):  # noqa: F811
         get_settings.cache_clear()
 
 
-def test_ip_ignores_forwarded_header_unless_trusted(api, mails, monkeypatch):  # noqa: F811
+def test_ip_ignores_forwarded_header_unless_trusted(api, mails, monkeypatch):
     from config.settings import get_settings
 
     monkeypatch.setenv("RATE_LIMIT_MAGIC_LINK_PER_IP", "1")

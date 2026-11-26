@@ -8,32 +8,7 @@ from app.deps import SESSION_COOKIE
 from app.models import Account, AuthSession, LoginToken
 from app.services import auth
 from app.services.mailer import get_mailer
-
-
-class RecordingMailer:
-    def __init__(self):
-        self.sent: list[tuple[str, str, str]] = []
-
-    def send(self, to, subject, body):
-        self.sent.append((to, subject, body))
-
-    def last_token(self) -> str:
-        return re.search(r"/connexion\?token=([\w-]+)", self.sent[-1][2]).group(1)
-
-
-@pytest.fixture
-def mails():
-    return RecordingMailer()
-
-
-@pytest.fixture
-def api(client, mails):
-    client.app.dependency_overrides[get_mailer] = lambda: mails
-    return client
-
-
-def ask(api, email="a@example.org"):
-    return api.post("/api/auth/magic-link", json={"email": email})
+from tests.helpers import ask
 
 
 def test_magic_link_same_answer_for_known_and_unknown(api, mails, session):
@@ -96,6 +71,8 @@ def test_cookie_secure_when_configured(api, mails, monkeypatch):
     from config.settings import get_settings
 
     monkeypatch.setenv("COOKIE_SECURE", "true")
+    monkeypatch.setenv("MAIL_BACKEND", "smtp")  # console is refused with COOKIE_SECURE=true
+    monkeypatch.setenv("SMTP_HOST", "mail.test")
     get_settings.cache_clear()
     try:
         ask(api)
@@ -158,3 +135,26 @@ def test_logout_revokes_session_and_clears_cookie(api, mails, session):
 
 def test_logout_without_session_is_idempotent(api):
     assert api.post("/api/auth/logout").status_code == 204
+
+
+def test_magic_link_purges_expired_tokens(api, session):
+    ask(api, "old@example.org")
+    session.execute(LoginToken.__table__.update().values(expires_at=auth.now() - timedelta(days=2)))
+    session.commit()
+    ask(api, "new@example.org")
+    assert session.scalars(select(LoginToken.email)).all() == ["new@example.org"]
+
+
+def test_mail_failure_does_not_log_token_or_address(api, caplog):
+    import logging
+
+    class Leaky:
+        def send(self, to, subject, body):
+            raise RuntimeError(f"SMTP refused {to}: {body}")
+
+    api.app.dependency_overrides[get_mailer] = lambda: Leaky()
+    with caplog.at_level(logging.DEBUG):
+        r = ask(api, "secret.person@example.org")
+    assert r.status_code == 202
+    assert "secret.person" not in caplog.text and "token=" not in caplog.text
+    assert any(rec.levelno == logging.ERROR for rec in caplog.records)  # the failure is still reported

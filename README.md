@@ -65,7 +65,7 @@ Le front envoie ses requêtes avec `credentials: "include"` ; `CORS_ORIGINS` doi
 docker compose --profile mail up --build
 ```
 
-Les e-mails arrivent dans l'interface de mailpit, <http://localhost:8025> (SMTP sur le port 1025 ; les deux ports ne sont exposés que sur `127.0.0.1`). Sans mailpit, `MAIL_BACKEND=console` (défaut) écrit le message, lien compris, dans `docker compose logs api` : n'utilisez jamais `console` en production, le lien y donne accès au compte.
+Les e-mails arrivent dans l'interface de mailpit, <http://localhost:8025> (SMTP sur le port 1025 ; les deux ports ne sont exposés que sur `127.0.0.1`). Sans mailpit, `MAIL_BACKEND=console` (défaut) écrit le message, lien compris, dans `docker compose logs api` : n'utilisez jamais `console` en production, le lien y donne accès au compte : l'API **refuse de démarrer** avec `MAIL_BACKEND=console` et `COOKIE_SECURE=true`, et journalise un avertissement au démarrage dès que `console` est actif.
 
 ## Tests
 

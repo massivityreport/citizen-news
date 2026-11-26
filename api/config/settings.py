@@ -2,7 +2,7 @@
 
 from functools import lru_cache
 
-from pydantic import field_validator, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 from typing import Annotated, Literal
 
@@ -42,7 +42,7 @@ class Settings(BaseSettings):
     trust_proxy: bool = False
 
     # Maximum number of votes accepted by one POST /api/votes/claim.
-    claim_max_votes: int = 200
+    claim_max_votes: int = Field(200, ge=1, le=1000)  # 1000 = hard bound on the parsed payload
 
     @field_validator("cors_origins", mode="before")
     @classmethod
@@ -56,6 +56,16 @@ class Settings(BaseSettings):
     def _smtp_needs_host(self):
         if self.mail_backend == "smtp" and not self.smtp_host:
             raise ValueError("SMTP_HOST is required when MAIL_BACKEND=smtp")
+        return self
+
+    @model_validator(mode="after")
+    def _no_console_mail_in_production(self):
+        # COOKIE_SECURE=true means HTTPS, i.e. production: the console mailer would log working login links.
+        if self.mail_backend == "console" and self.cookie_secure:
+            raise ValueError(
+                "MAIL_BACKEND=console is for development only and cannot be used with COOKIE_SECURE=true: "
+                "login links would be written to the logs. Set MAIL_BACKEND=smtp (and SMTP_HOST)."
+            )
         return self
 
 

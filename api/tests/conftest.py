@@ -74,3 +74,18 @@ def _fresh_rate_limiter():
     get_rate_limiter.cache_clear()
     yield
     get_rate_limiter.cache_clear()
+
+
+@pytest.fixture
+def mails():
+    from tests.helpers import RecordingMailer
+
+    return RecordingMailer()
+
+
+@pytest.fixture
+def api(client, mails):
+    from app.services.mailer import get_mailer
+
+    client.app.dependency_overrides[get_mailer] = lambda: mails
+    return client

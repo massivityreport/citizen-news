@@ -64,7 +64,7 @@ POST /api/auth/verify     ─▶ jeton consommé, compte créé au 1er usage ─
 GET /api/me · POST /api/auth/logout · POST /api/votes/claim · GET /api/votes/mine   (cookie requis)
 ```
 
-- **Jetons** : `secrets.token_urlsafe(32)`, stockés uniquement hachés (SHA-256) : lien magique dans `login_tokens` (expire après `LOGIN_TOKEN_TTL_MINUTES`, usage unique consommé par un `UPDATE … WHERE used_at IS NULL` atomique), session dans `sessions` (`SESSION_TTL_DAYS`). Pas de JWT : la déconnexion révoque la session côté serveur. Jetons expirés ou utilisés et sessions expirées sont purgés à chaque vérification (au bout d'un jour pour les jetons).
+- **Jetons** : `secrets.token_urlsafe(32)`, stockés uniquement hachés (SHA-256) : lien magique dans `login_tokens` (expire après `LOGIN_TOKEN_TTL_MINUTES`, usage unique consommé par un `UPDATE … WHERE used_at IS NULL` atomique), session dans `sessions` (`SESSION_TTL_DAYS`). Pas de JWT : la déconnexion révoque la session côté serveur. Jetons expirés ou utilisés et sessions expirées sont purgés à chaque demande de lien et à chaque vérification (au bout d'un jour pour les jetons).
 - **Cookie** `cn_session` : `httpOnly`, `SameSite=Lax`, `Secure` si `COOKIE_SECURE=true`, `Max-Age` = durée de session.
 - **Pas d'énumération** : `magic-link` répond `202 {}` dans tous les cas (l'e-mail est envoyé aussi pour une adresse inconnue : le compte n'est créé qu'à la vérification) ; l'échec d'envoi n'est pas visible de l'appelant. `verify` répond `400` au message unique « Lien de connexion invalide ou expiré » (inconnu, expiré ou déjà utilisé).
 - **Données personnelles** : `accounts` ne contient que l'e-mail et la date de création. Aucune IP en base ; le limiteur de débit les garde en mémoire, le temps de la fenêtre. L'e-mail dans `login_tokens` est supprimé un jour après expiration ou usage.
@@ -85,11 +85,13 @@ GET /api/me · POST /api/auth/logout · POST /api/votes/claim · GET /api/votes/
 | `POST /api/auth/verify` | IP | `RATE_LIMIT_VERIFY_PER_IP` (30) |
 | `POST /api/votes/claim` | compte | `RATE_LIMIT_CLAIM_PER_ACCOUNT` (30) |
 
-Fenêtre : `RATE_LIMIT_WINDOW_SECONDS` (3600). L'IP est celle de la connexion ; avec `TRUST_PROXY=true`, c'est la **dernière** entrée de `X-Forwarded-For` (celle qu'ajoute le proxy de confiance : les entrées précédentes sont falsifiables). N'activez `TRUST_PROXY` que derrière un proxy qui écrase ou complète cet en-tête, sinon n'importe qui contourne la limite.
+Fenêtre : `RATE_LIMIT_WINDOW_SECONDS` (3600). Ces variables sont transmises à l'API par le compose.
+
+**Limites connues** : la limite par e-mail est aussi un verrou. Quelqu'un qui connaît l'adresse d'une victime peut épuiser ses 5 demandes et l'empêcher de recevoir un lien pendant une heure (compromis assumé : sans cela, l'API servirait à inonder une boîte de courriels). Derrière un reverse proxy **sans** `TRUST_PROXY=true`, tous les clients partagent l'IP du proxy et donc la limite par IP (20/h) : un seul abus bloque tout le monde ; avec `TRUST_PROXY=true`, la limite redevient individuelle. L'IP est celle de la connexion ; avec `TRUST_PROXY=true`, c'est la **dernière** entrée de `X-Forwarded-For` (celle qu'ajoute le proxy de confiance : les entrées précédentes sont falsifiables). N'activez `TRUST_PROXY` que derrière un proxy qui écrase ou complète cet en-tête, sinon n'importe qui contourne la limite.
 
 ### Votes anonymes
 
-Les votes faits sans compte restent dans le navigateur : rien n'est stocké côté serveur avant `claim`, donc ils ne comptent pas dans le classement. `POST /api/votes/claim {votes:[{topic_id,choice}]}` : un vote déjà présent sur le sujet n'est jamais écrasé (contrainte `UNIQUE(account_id, topic_id)` + `ON CONFLICT DO NOTHING`), les sujets inconnus sont ignorés, un sujet répété dans le lot compte une fois (le premier gagne), `claimed` est le nombre de votes réellement créés. Un lot de plus de `CLAIM_MAX_VOTES` (200) votes est refusé en `422` (rien n'est enregistré). `POST /api/votes` (vote direct) viendra avec la tâche votes/halving.
+Les votes faits sans compte restent dans le navigateur : rien n'est stocké côté serveur avant `claim`, donc ils ne comptent pas dans le classement. `POST /api/votes/claim {votes:[{topic_id,choice}]}` : un vote déjà présent sur le sujet n'est jamais écrasé (contrainte `UNIQUE(account_id, topic_id)` + `ON CONFLICT DO NOTHING`), les sujets inconnus sont ignorés, un sujet répété dans le lot compte une fois (le premier gagne), `claimed` est le nombre de votes réellement créés. Un lot de plus de `CLAIM_MAX_VOTES` (200, au plus 1000) votes est refusé en `422` (rien n'est enregistré) ; au-delà de 1000, le refus intervient dès la lecture de la requête. `POST /api/votes` (vote direct) viendra avec la tâche votes/halving.
 
 Toute erreur de validation (`422`) renvoie `{"detail": "Requête invalide (champ : …)"}` comme le contrat le demande.
 

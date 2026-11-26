@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class SourceOut(BaseModel):
@@ -80,7 +80,8 @@ class VoteItem(BaseModel):
 
 
 class ClaimRequest(BaseModel):
-    votes: list[VoteItem]
+    # Hard bound checked while parsing; the configurable cap (CLAIM_MAX_VOTES) is enforced in the route.
+    votes: list[VoteItem] = Field(max_length=1000)
 
 
 class ClaimResponse(BaseModel):
