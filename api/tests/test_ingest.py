@@ -121,6 +121,11 @@ def _images_by_url() -> dict[str, str | None]:
     "raw, expected",
     [
         ("https://cdn.example/a.jpg", "https://cdn.example/a.jpg"),
+        ("HTTPS://CDN.example/a.jpg", "https://cdn.example/a.jpg"),  # scheme and host lowercased
+        ("https://café.example/a.jpg", "https://xn--caf-dma.example/a.jpg"),  # IDN stored as punycode
+        ("https://cdn.example:8443/a.jpg?w=1#x", "https://cdn.example:8443/a.jpg?w=1#x"),
+        ("https://93.184.216.34/a.jpg", "https://93.184.216.34/a.jpg"),
+        ("https://[2606:4700::1111]/a.jpg", "https://[2606:4700::1111]/a.jpg"),
         ("  https://cdn.example/a.jpg  ", "https://cdn.example/a.jpg"),
         ("http://cdn.example/a.jpg", None),
         ("data:image/png;base64,AAAA", None),
@@ -134,6 +139,38 @@ def _images_by_url() -> dict[str, str | None]:
         ("https://cdn.example/a\n.jpg", None),
         ("https://cdn.example/a\x00.jpg", None),
         ("https://cdn.example:notaport/a.jpg", None),
+        ("https://cdn.example:99999/a.jpg", None),
+        ("https://cdn.example:0/a.jpg", None),
+        ("https://evil.com\\.good.com/x.jpg", None),  # a browser reads \ as /
+        ("https://cdn.example\\a.jpg", None),
+        ("\\\\evil.com/x.jpg", None),
+        ("/\\evil.com/x.jpg", None),
+        ("https://cdn.example/a\"b.jpg", None),
+        ("https://cdn.example/a'b.jpg", None),
+        ("https://cdn.example/a<b>.jpg", None),
+        ("https://.", None),
+        ("https://cdn..example/a.jpg", None),
+        ("https://cdn.example./a.jpg", None),
+        ("https://cdn_x.example/a.jpg", None),
+        ("https://localhost/a.jpg", None),
+        ("https://LOCALHOST:8443/a.jpg", None),
+        ("https://img.localhost/a.jpg", None),
+        ("https://127.0.0.1/a.jpg", None),
+        ("https://10.0.0.5/a.jpg", None),
+        ("https://172.16.0.1/a.jpg", None),
+        ("https://192.168.1.1/a.jpg", None),
+        ("https://169.254.169.254/a.jpg", None),
+        ("https://100.64.0.1/a.jpg", None),
+        ("https://0.0.0.0/a.jpg", None),
+        ("https://240.0.0.1/a.jpg", None),
+        ("https://2130706433/a.jpg", None),  # decimal 127.0.0.1
+        ("https://0x7f.1/a.jpg", None),
+        ("https://127.1/a.jpg", None),
+        ("https://[::1]/a.jpg", None),
+        ("https://[::]/a.jpg", None),
+        ("https://[fe80::1]/a.jpg", None),
+        ("https://[fc00::1]/a.jpg", None),
+        ("https://[::ffff:127.0.0.1]/a.jpg", None),
         ("", None),
         (None, None),
         (42, None),
@@ -217,3 +254,27 @@ def test_ingest_backfills_image_of_existing_article_only(session):
     ingest(session, [IMAGES], make_client({IMAGES.feed_url: plain}))  # a feed that dropped it keeps it
     session.expire_all()
     assert session.scalars(select(Article.image_url)).one() == "https://cdn.example/new.jpg"
+
+
+def test_ingest_backfill_leaves_topic_assignment_untouched(session):
+    from app.models.entities import Topic
+
+    source = MediaSource(name="Images", feed_url=IMAGES.feed_url)
+    topic = Topic(title="Sujet existant")
+    session.add_all([source, topic])
+    session.flush()
+    published = datetime(2026, 11, 25, 10, tzinfo=UTC)
+    session.add(Article(source_id=source.id, url="https://img.example/a/known", title="Article connu",
+                        published_at=published, topic_id=topic.id))
+    session.commit()
+    topic_id, updated_at = topic.id, topic.updated_at
+    feed = b"""<rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/"><channel><title>x</title>
+    <item><title>Article connu</title><link>https://img.example/a/known</link>
+    <pubDate>Wed, 25 Nov 2026 23:00:00 GMT</pubDate>
+    <media:content url="https://cdn.example/new.jpg" medium="image"/></item></channel></rss>"""
+    ingest(session, [IMAGES], make_client({IMAGES.feed_url: feed}))
+    session.expire_all()
+    article = session.scalars(select(Article)).one()
+    assert article.image_url == "https://cdn.example/new.jpg"
+    assert article.topic_id == topic_id and article.published_at == published
+    assert session.get(Topic, topic_id).updated_at == updated_at

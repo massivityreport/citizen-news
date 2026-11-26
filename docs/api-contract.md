@@ -26,7 +26,7 @@ Contrat que les tâches backend suivantes implémentent et que le front consomme
 }
 ```
 
-`image_url` : `string | null`, toujours présent. URL **https** d'une image de l'article, validée à l'ingestion (schéma https, hôte non vide, sans identifiants, sans espace ni caractère de contrôle, 500 caractères au plus). Valeur : l'image de l'article le plus récent du sujet (`published_at` décroissant, puis `id` décroissant) qui en a une ; `null` si aucun article n'en a.
+`image_url` : `string | null`, toujours présent. URL **https** d'une image de l'article, validée à l'ingestion : schéma https (mis en minuscules), hôte fait de lettres, chiffres, points et tirets (IDN conservé en punycode) ou IP littérale publique, port valide, sans identifiants, sans espace, caractère de contrôle, antislash ni `" ' < >`, 500 caractères au plus. Les hôtes locaux ou privés sont refusés (`localhost`, `*.localhost`, IP privées, loopback, link-local, réservées ou non spécifiées, IPv4 comme IPv6) : le navigateur du lecteur ferait la requête sur son propre réseau. Valeur : l'image de l'article le plus récent du sujet (`published_at` décroissant, les dates absentes en dernier, puis `id` décroissant ; contrairement à `sources`, `fetched_at` ne sert pas de repli) qui en a une ; `null` si aucun article n'en a.
 
 **Hotlink uniquement** (décision de l'humain) : le serveur ne télécharge, ne copie ni ne met en cache aucune image, il ne garde que l'URL ; pas de proxy d'images. Le navigateur du lecteur charge l'image directement chez le média.
 

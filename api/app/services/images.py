@@ -1,20 +1,66 @@
 """Article images found in feed entries. Hotlink only: we keep a validated URL, never the bytes,
 and never make a request to the media. Nothing here raises because of an image."""
 
+import ipaddress
+import re
 import unicodedata
 from html.parser import HTMLParser
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import urljoin, urlsplit, urlunsplit
 
 MAX_IMAGE_URL_CHARS = 500
+# A browser (WHATWG) treats "\" as "/", so urlsplit and the browser would disagree on the host;
+# a valid URL has percent-encoded quotes and angle brackets.
+_FORBIDDEN_URL_CHARS = frozenset('\\"\'<>')
+_LABEL_RE = re.compile(r"^[a-z0-9-]{1,63}$")
 
 
 def _has_forbidden_char(text: str) -> bool:
-    return any(ch.isspace() or unicodedata.category(ch) in ("Cc", "Cf") for ch in text)
+    return any(
+        ch.isspace() or ch in _FORBIDDEN_URL_CHARS or unicodedata.category(ch) in ("Cc", "Cf") for ch in text
+    )
+
+
+def _public_host(host: str) -> str | None:
+    """The host as stored (lowercase; IDN converted to punycode), or None when it is not a plain public
+    DNS name or public IP literal. Local and private targets are refused: the reader's browser would
+    request them on the reader's own network."""
+    if ":" in host:  # IPv6 literal (urlsplit strips the brackets)
+        try:
+            ip = ipaddress.ip_address(host)
+        except ValueError:
+            return None
+        return host if _is_public_ip(ip) else None
+    try:
+        host = host.encode("idna").decode("ascii") if not host.isascii() else host
+    except UnicodeError:
+        return None
+    labels = host.split(".")
+    if len(host) > 253 or not all(_LABEL_RE.match(label) for label in labels):
+        return None
+    if host == "localhost" or host.endswith(".localhost"):
+        return None
+    last = labels[-1]
+    if last.isdigit() or last.startswith("0x"):
+        # Looks like an IPv4 address (a browser also reads "2130706433" or "0x7f.1" as one): strict dotted quad only.
+        try:
+            ip = ipaddress.ip_address(host)
+        except ValueError:
+            return None
+        return host if _is_public_ip(ip) else None
+    return host
+
+
+def _is_public_ip(ip) -> bool:
+    if getattr(ip, "ipv4_mapped", None) is not None:
+        ip = ip.ipv4_mapped
+    return ip.is_global and not ip.is_multicast
 
 
 def validate_image_url(raw: object, base: str | None = None) -> str | None:
     """The URL to store, or None. A relative URL is resolved against `base` (the article link).
-    Accepted: https only, non-empty host, no user:pass@, no space or control character, <= 500 chars."""
+    Accepted: https only (scheme lowercased), a public host (letters, digits, dots, hyphens, or an
+    IP literal that is not private/loopback/link-local/reserved; IDN converted to punycode), valid
+    port, no user:pass@, no space, control character, backslash or any of " ' < >, <= 500 chars."""
     if not isinstance(raw, str):
         return None
     candidate = raw.strip()
@@ -31,7 +77,16 @@ def validate_image_url(raw: object, base: str | None = None) -> str | None:
             return None
         if "@" in parts.netloc or parts.username is not None or parts.password is not None:
             return None
-        parts.port  # noqa: B018 - raises ValueError on a malformed port
+        port = parts.port  # raises ValueError on a malformed or out-of-range port
+        if port == 0:
+            return None
+        host = _public_host(parts.hostname)
+        if host is None:
+            return None
+        netloc = f"[{host}]" if ":" in host else host
+        if port is not None:
+            netloc += f":{port}"
+        url = urlunsplit(("https", netloc, parts.path, parts.query, parts.fragment))
     except ValueError:
         return None
     if len(url) > MAX_IMAGE_URL_CHARS or _has_forbidden_char(url):
