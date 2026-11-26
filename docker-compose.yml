@@ -21,12 +21,14 @@ services:
       target: api
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-citizen}:${POSTGRES_PASSWORD:-citizen_dev_only}@db:5432/${POSTGRES_DB:-citizen_news}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
-      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:5173}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:8080}
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:8080}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       SESSION_TTL_DAYS: ${SESSION_TTL_DAYS:-30}
       LOGIN_TOKEN_TTL_MINUTES: ${LOGIN_TOKEN_TTL_MINUTES:-15}
-      TRUST_PROXY: ${TRUST_PROXY:-false}
+      # true par défaut : l'API est servie derrière le nginx du service web (X-Forwarded-For), sinon toutes
+      # les limites par IP verraient l'adresse de nginx.
+      TRUST_PROXY: ${TRUST_PROXY:-true}
       # "console" logs the login link (dev only); "smtp" sends it (see SMTP_* and the mailpit service).
       MAIL_BACKEND: ${MAIL_BACKEND:-console}
       SMTP_HOST: ${SMTP_HOST:-}
@@ -54,6 +56,17 @@ services:
       interval: 5s
       timeout: 5s
       retries: 20
+
+  # Front (React, build statique servi par nginx, qui proxifie /api vers api:8000). web/ vient de la pile front :
+  # tant qu'elle n'est pas mergée, `docker compose up` échoue sur ce service (« web: path not found »).
+  web:
+    build:
+      context: ./web
+    ports:
+      - "${WEB_BIND:-127.0.0.1}:${WEB_PORT:-8080}:80"
+    depends_on:
+      api:
+        condition: service_healthy
 
   # Periodic ingestion + clustering. Starts once the API is healthy, i.e. once migrations are applied.
   worker:
