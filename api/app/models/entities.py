@@ -75,6 +75,8 @@ class Article(Base):
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     fetched_at: Mapped[datetime] = _now()
     topic_id: Mapped[int | None] = mapped_column(ForeignKey("topics.id", ondelete="SET NULL"))
+    # Hotlinked, validated at ingestion (https only); the image itself is never downloaded.
+    image_url: Mapped[str | None] = mapped_column(String(500))
 
 
 class Account(Base):

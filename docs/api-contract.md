@@ -21,9 +21,22 @@ Contrat que les tâches backend suivantes implémentent et que le front consomme
     { "name": "Nom du média", "url": "https://…", "title": "Titre de l'article", "published_at": "2026-11-26T09:30:00Z" }
   ],
   "first_seen_at": "2026-11-25T18:00:00Z",
-  "updated_at": "2026-11-26T09:30:00Z"
+  "updated_at": "2026-11-26T09:30:00Z",
+  "image_url": "https://cdn.example.org/photo.jpg"
 }
 ```
+
+`image_url` : `string | null`, toujours présent. URL **https** d'une image de l'article, validée à l'ingestion : schéma https (mis en minuscules), hôte fait de lettres, chiffres, points et tirets (IDN conservé en punycode) ou IP littérale publique, port valide, sans identifiants, sans espace, caractère de contrôle, antislash ni `" ' < >`, 500 caractères au plus. Les hôtes locaux ou privés sont refusés (`localhost`, `*.localhost`, IP privées, loopback, link-local, réservées ou non spécifiées, IPv4 comme IPv6) : le navigateur du lecteur ferait la requête sur son propre réseau. Valeur : l'image de l'article le plus récent du sujet (`published_at` décroissant, les dates absentes en dernier, puis `id` décroissant ; contrairement à `sources`, `fetched_at` ne sert pas de repli) qui en a une ; `null` si aucun article n'en a.
+
+**Hotlink uniquement** (décision de l'humain) : le serveur ne télécharge, ne copie ni ne met en cache aucune image, il ne garde que l'URL ; pas de proxy d'images. Le navigateur du lecteur charge l'image directement chez le média.
+
+**Limites connues** : les images appartiennent aux médias (droits d'auteur des images tierces) ; charger une image depuis le média **révèle l'adresse IP du lecteur** (et son navigateur) à ce média. Pas de proxy ni de CSP dans cette version.
+
+#### Source des images (ingestion)
+
+Pour chaque entrée de flux, premier candidat valide parmi, dans l'ordre : `media:content` (`medium="image"` ou type `image/*`), `media:thumbnail`, enclosure de type `image/*`, première `<img src>` du contenu puis du résumé HTML. URL relative résolue contre le lien de l'article ; un candidat invalide passe au suivant, aucun ne fait échouer l'ingestion.
+
+**Réingestion** : les articles déjà en base n'ont pas d'image. Quand un article existant a `image_url` à `NULL` et que son flux en fournit maintenant une valide, le cycle d'ingestion normal la renseigne (mise à jour de cette colonne seule : ni `topic_id`, ni `published_at`, ni regroupement). Une image déjà enregistrée n'est jamais remplacée. Les articles qui ont quitté les flux restent sans image ; il n'y a pas de commande de réingestion séparée.
 
 ### Soutien (`support`) et raison (`reason`)
 

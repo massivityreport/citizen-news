@@ -9,11 +9,12 @@ from urllib.parse import urlsplit
 
 import feedparser
 import httpx
-from sqlalchemy import literal_column, select
+from sqlalchemy import func, literal_column, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.models.entities import Article, MediaSource
+from app.services.images import extract_image_url
 from app.services.text import clean_html, truncate
 from config.feeds import FeedConfig, load_feeds
 
@@ -32,6 +33,7 @@ class ParsedArticle:
     title: str
     summary: str
     published_at: datetime | None
+    image_url: str | None = None
 
 
 @dataclass
@@ -93,7 +95,7 @@ def parse_feed(content: bytes, now: datetime | None = None) -> list[ParsedArticl
         published = datetime.fromtimestamp(timegm(stamp), UTC) if stamp else None
         if published and published > now:
             published = now  # a feed date in the future (clock skew) would hide the article from the window
-        articles.setdefault(url, ParsedArticle(url, title, summary, published))
+        articles.setdefault(url, ParsedArticle(url, title, summary, published, extract_image_url(entry, url)))
     return list(articles.values())
 
 
@@ -107,19 +109,29 @@ def fetch_feed(client: httpx.Client, url: str) -> bytes:
 
 def upsert_articles(session: Session, source_id: int, articles: Sequence[ParsedArticle]) -> int:
     """Insert articles by URL; an existing URL has its title/summary refreshed only if they changed.
+    An existing article with no image gets the feed's image if it now has a valid one (UPDATE of
+    image_url alone: no topic_id, no published_at).
+
     published_at is deliberately left out of the conflict update: the first date seen is kept, so an
     article never moves in the clustering window and the topic assignment stays stable.
     Returns the number of newly inserted articles."""
     new = 0
     for a in articles:
         insert_stmt = insert(Article).values(
-            source_id=source_id, url=a.url, title=a.title, summary=a.summary, published_at=a.published_at
+            source_id=source_id, url=a.url, title=a.title, summary=a.summary,
+            published_at=a.published_at, image_url=a.image_url,
         )
         stmt = insert_stmt.on_conflict_do_update(
             index_elements=["url"],
-            set_={"title": insert_stmt.excluded.title, "summary": insert_stmt.excluded.summary},
+            set_={
+                "title": insert_stmt.excluded.title,
+                "summary": insert_stmt.excluded.summary,
+                # backfill only: an image already stored is never replaced
+                "image_url": func.coalesce(Article.image_url, insert_stmt.excluded.image_url),
+            },
             where=(Article.title.is_distinct_from(insert_stmt.excluded.title))
-            | (Article.summary.is_distinct_from(insert_stmt.excluded.summary)),
+            | (Article.summary.is_distinct_from(insert_stmt.excluded.summary))
+            | (Article.image_url.is_(None) & insert_stmt.excluded.image_url.is_not(None)),
             # xmax = 0 is how PostgreSQL tells an inserted row from one updated by ON CONFLICT: there is
             # no portable alternative in a single statement. An unchanged conflict returns no row.
         ).returning(literal_column("(xmax = 0)").label("inserted"))

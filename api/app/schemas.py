@@ -30,6 +30,7 @@ class TopicCard(BaseModel):
     sources: list[SourceOut]
     first_seen_at: datetime
     updated_at: datetime
+    image_url: str | None
 
 
 class FrontTopic(TopicCard):
