@@ -1,0 +1,12 @@
+.page { max-width: 32rem; margin-inline: auto; }
+.form { display: grid; gap: .6rem; }
+.form p { margin: 0; }
+.form label { font-weight: 700; }
+.form input { font: inherit; padding: .75rem; min-height: 3rem; border: 2px solid var(--c-primary); border-radius: var(--radius); background: var(--c-surface); color: var(--c-text); width: 100%; }
+.form input[aria-invalid="true"] { border-color: #b42318; }
+.btn { display: inline-block; text-align: center; text-decoration: none; font-weight: 700; background: var(--c-primary); color: var(--c-on-primary); padding: .8rem 1.2rem; min-height: 3rem; border-radius: 999px; border: 0; }
+.btn:disabled { opacity: .6; cursor: not-allowed; }
+.notice { padding: .8rem 1rem; border-radius: var(--radius); border: 2px solid var(--c-primary); background: var(--c-surface); }
+.error { color: #b42318; font-weight: 600; }
+.error:focus, .notice:focus { outline: 3px solid var(--c-focus); }
+.link { background: none; border: 0; padding: .5rem 0; text-decoration: underline; color: var(--c-text); }
