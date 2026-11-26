@@ -34,7 +34,18 @@ const DEFAULT_MESSAGES: Record<number, string> = {
   429: "Trop de requêtes, réessayez dans un instant.",
 };
 
-async function request<T>(path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
+type UnauthorizedListener = () => void;
+const adminUnauthorizedListeners = new Set<UnauthorizedListener>();
+
+/** Appelé quand une route admin (hors connexion et /me) répond 401 : la session a disparu ou expiré. */
+export function onAdminUnauthorized(listener: UnauthorizedListener): () => void {
+  adminUnauthorizedListeners.add(listener);
+  return () => void adminUnauthorizedListeners.delete(listener);
+}
+
+const ADMIN_PUBLIC_PATHS = ["/admin/login", "/admin/me"];
+
+export async function request<T>(path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
   const headers: Record<string, string> = { Accept: "application/json" };
   if (init.body !== undefined) headers["Content-Type"] = "application/json";
 
@@ -56,6 +67,9 @@ async function request<T>(path: string, init: { method?: string; body?: unknown 
   }
 
   if (!res.ok) {
+    if (res.status === 401 && path.startsWith("/admin/") && !ADMIN_PUBLIC_PATHS.includes(path)) {
+      adminUnauthorizedListeners.forEach((listener) => listener());
+    }
     const detail = (data as { detail?: unknown } | undefined)?.detail;
     const retry = Number(res.headers.get("Retry-After"));
     throw new ApiError(
@@ -98,6 +112,22 @@ export const api = {
       return await request<Me>("/me");
     } catch (e) {
       if (e instanceof ApiError && e.isUnauthorized) return null;
+      throw e;
+    }
+  },
+
+  adminLogin: (password: string) =>
+    request<{ authenticated: true }>("/admin/login", { method: "POST", body: { password } }),
+
+  adminLogout: () => request<void>("/admin/logout", { method: "POST" }),
+
+  /** true si la session admin est valide, false sinon (401). */
+  adminMe: async (): Promise<boolean> => {
+    try {
+      await request<{ authenticated: true }>("/admin/me");
+      return true;
+    } catch (e) {
+      if (e instanceof ApiError && e.isUnauthorized) return false;
       throw e;
     }
   },
