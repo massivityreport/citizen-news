@@ -68,8 +68,8 @@ async function request<T>(path: string, init: { method?: string; body?: unknown 
 }
 
 export const api = {
-  topicsFront: (limit = 20) =>
-    request<{ items: FrontTopic[] }>(`/topics/front?limit=${limit}`),
+  topicsFront: (limit = 10) =>
+    request<{ items: FrontTopic[]; has_more: boolean }>(`/topics/front?limit=${limit}`),
 
   voteNext: (count = 10, seen: number[] = []) => {
     const q = new URLSearchParams({ count: String(count) });

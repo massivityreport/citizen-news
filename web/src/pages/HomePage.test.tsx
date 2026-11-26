@@ -31,7 +31,8 @@ function stubApi(front: () => Response | Promise<Response>) {
   vi.stubGlobal("fetch", fn);
   return fn;
 }
-const ok = (items: FrontTopic[]) => new Response(JSON.stringify({ items }), { status: 200 });
+const ok = (items: FrontTopic[], has_more = false) =>
+  new Response(JSON.stringify({ items, has_more }), { status: 200 });
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -112,5 +113,84 @@ describe("La une citoyenne", () => {
     renderApp("/");
     const cta = await screen.findByRole("complementary", { name: "Participer" });
     expect(within(cta).getByRole("link", { name: "À vous de jouer" })).toHaveAttribute("href", "/jouer");
+  });
+
+  describe("Voir plus", () => {
+    const many = (n: number) => Array.from({ length: n }, (_, i) => topic({ id: i + 1, title: `Sujet ${i + 1}` }));
+    const limitOf = (url: string) => Number(new URL(url, "http://x").searchParams.get("limit"));
+
+    it("affiche 10 sujets, puis 20 au clic, sans doublon", async () => {
+      const fn = stubApi(() => ok([]));
+      fn.mockImplementation(async (url: string) => {
+        if (url.startsWith("/api/topics/front")) {
+          const n = limitOf(url);
+          return ok(many(n), n < 30);
+        }
+        return new Response("{}", { status: 401 });
+      });
+      renderApp("/");
+      await screen.findByRole("article", { name: "Sujet 1" });
+      expect(screen.getAllByRole("article")).toHaveLength(10);
+      expect(fn.mock.calls.some(([u]) => limitOf(u as string) === 10)).toBe(true);
+      const btn = screen.getByRole("button", { name: "Voir plus" });
+      await userEvent.click(btn);
+      await screen.findByRole("article", { name: "Sujet 20" });
+      const titles = screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent);
+      expect(titles).toHaveLength(20);
+      expect(new Set(titles).size).toBe(20);
+      expect(screen.getByRole("button", { name: "Voir plus" })).toHaveFocus();
+    });
+
+    it("garde la liste pendant le chargement et indique « Chargement… »", async () => {
+      let release: (r: Response) => void = () => {};
+      const fn = stubApi(() => ok([]));
+      fn.mockImplementation(async (url: string) => {
+        if (!url.startsWith("/api/topics/front")) return new Response("{}", { status: 401 });
+        if (limitOf(url) === 10) return ok(many(10), true);
+        return new Promise<Response>((r) => (release = r));
+      });
+      renderApp("/");
+      await screen.findByRole("article", { name: "Sujet 1" });
+      await userEvent.click(screen.getByRole("button", { name: "Voir plus" }));
+      expect(await screen.findByRole("button", { name: "Chargement…" })).toBeInTheDocument();
+      expect(screen.getAllByRole("article")).toHaveLength(10);
+      release(ok(many(20), false));
+      await screen.findByRole("article", { name: "Sujet 20" });
+    });
+
+    it("n'affiche pas le bouton quand has_more est faux", async () => {
+      stubApi(() => ok(many(3), false));
+      renderApp("/");
+      await screen.findByRole("article", { name: "Sujet 1" });
+      expect(screen.queryByRole("button", { name: "Voir plus" })).toBeNull();
+    });
+
+    it("n'affiche plus le bouton à la limite de 50", async () => {
+      const fn = stubApi(() => ok([]));
+      fn.mockImplementation(async (url: string) =>
+        url.startsWith("/api/topics/front") ? ok(many(limitOf(url)), true) : new Response("{}", { status: 401 }),
+      );
+      renderApp("/");
+      await screen.findByRole("article", { name: "Sujet 10" });
+      for (let n = 20; n <= 50; n += 10) {
+        await userEvent.click(await screen.findByRole("button", { name: "Voir plus" }));
+        await screen.findByRole("article", { name: `Sujet ${n}` });
+      }
+      expect(screen.queryByRole("button", { name: /Voir plus|Chargement/ })).toBeNull();
+      expect(screen.getAllByRole("article")).toHaveLength(50);
+    });
+
+    it("garde la liste et propose de réessayer si « Voir plus » échoue", async () => {
+      const fn = stubApi(() => ok([]));
+      fn.mockImplementation(async (url: string) => {
+        if (!url.startsWith("/api/topics/front")) return new Response("{}", { status: 401 });
+        return limitOf(url) === 10 ? ok(many(10), true) : new Response("{}", { status: 500 });
+      });
+      renderApp("/");
+      await screen.findByRole("article", { name: "Sujet 1" });
+      await userEvent.click(screen.getByRole("button", { name: "Voir plus" }));
+      expect(await screen.findByRole("alert")).toHaveTextContent(/plus de sujets/);
+      expect(screen.getAllByRole("article")).toHaveLength(10);
+    });
   });
 });

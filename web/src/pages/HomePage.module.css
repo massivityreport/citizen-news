@@ -16,3 +16,6 @@
 .cta { margin-top: 2rem; text-align: center; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--radius); padding: 1.5rem 1rem; }
 .cta p { margin: 0 0 1rem; font-weight: 600; }
 .cta .btn { background: var(--c-accent); color: var(--c-on-accent); }
+.more { text-align: center; margin: 1.5rem 0; }
+.more .btn { cursor: pointer; font: inherit; font-weight: 700; }
+.more .btn[aria-disabled="true"] { opacity: .7; cursor: progress; }
