@@ -72,3 +72,20 @@ class VerifyRequest(BaseModel):
 
 class EmailOut(BaseModel):
     email: str
+
+
+class VoteItem(BaseModel):
+    topic_id: int
+    choice: Literal["more", "not_priority", "unknown"]
+
+
+class ClaimRequest(BaseModel):
+    votes: list[VoteItem]
+
+
+class ClaimResponse(BaseModel):
+    claimed: int
+
+
+class MyVotes(BaseModel):
+    votes: list[VoteItem]
