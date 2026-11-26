@@ -11,7 +11,7 @@ Plateforme d'actualité participative : les citoyens votent sur les sujets qui m
 
 ```bash
 cp .env.example .env   # optionnel : les valeurs par défaut conviennent au développement local
-docker compose up --build
+docker compose up --build db api worker   # sans le front ; l'application complète (avec `web`) : voir « Lancer toute l'application »
 ```
 
 - PostgreSQL (service `db`, volume nommé `pgdata`), l'API (service `api`), puis le `worker` qui récupère les flux RSS et regroupe les articles en sujets toutes les 15 minutes (`INGEST_INTERVAL_MINUTES`). La une se remplit après le premier cycle (quelques secondes).
@@ -32,7 +32,7 @@ cp .env.example .env
 docker compose --profile mail up --build -d      # db, api, worker, web, mailpit
 docker compose exec worker python -m app.cli refresh   # premier ingest + regroupement (le worker le refera toutes les 15 min)
 docker compose run --rm -e DEMO_SEED=true api python -m app.cli seed-demo   # optionnel : sujets, comptes et votes fictifs
-python3 scripts/smoke.py --mailpit http://localhost:8025   # parcours de bout en bout
+python3 scripts/smoke.py --mailpit http://localhost:8025   # (pile backend seule : ajouter --api-only --base http://localhost:8000) parcours de bout en bout
 ```
 
 | Quoi | Où |
@@ -42,8 +42,8 @@ python3 scripts/smoke.py --mailpit http://localhost:8025   # parcours de bout en
 | Mails (profil `mail`) | <http://localhost:8025> |
 
 - `APP_BASE_URL` vaut `http://localhost:8080` par défaut : le lien magique pointe sur le front. Sans mailpit (`MAIL_BACKEND=console`), passez `--logs` à `smoke.py` au lieu de `--mailpit` : il lit le lien dans `docker compose logs api`.
-- Le navigateur n'appelle que `http://localhost:8080` : nginx proxifie `/api/` vers `api:8000`, donc même origine, pas de CORS ni de souci de cookie (`CORS_ORIGINS` reste configuré pour `npm run dev`, port 5173). `TRUST_PROXY` vaut `true` par défaut dans le compose : l'API lit l'IP cliente dans `X-Forwarded-For` posé par nginx, sinon toutes les limites par IP verraient l'adresse de nginx. Si vous atteignez l'API directement sur le port 8000, un client peut forger cet en-tête : n'exposez pas ce port en dehors de la machine de développement.
-- `scripts/smoke.py [--base URL] (--mailpit URL | --logs)` : crée un compte jetable `smoke-<horodatage>@example.org` et vérifie la une, `vote/next` (résultats masqués), `halving/config`, le front (`/`, repli SPA, `Referrer-Policy`), le lien magique (usage unique, cookie `httpOnly` `SameSite=Lax`), le rattachement des votes, le vote connecté, `votes/mine`, la déconnexion. Code de sortie 1 et ligne `ÉCART : …` au premier écart. Il consomme un lien magique et quelques votes sur les limites de débit : pas plus de quelques lancements par heure. `--base http://localhost:8000` le lance contre l'API seule.
+- Le navigateur n'appelle que `http://localhost:8080` : nginx proxifie `/api/` vers `api:8000`, donc même origine, pas de CORS ni de souci de cookie (`CORS_ORIGINS` reste configuré pour `npm run dev`, port 5173). `TRUST_PROXY` vaut `true` par défaut dans le compose : l'API lit l'IP cliente dans `X-Forwarded-For` posé par nginx, sinon toutes les limites par IP verraient l'adresse de nginx. Si vous atteignez l'API directement sur le port 8000, un client peut forger cet en-tête : c'est pourquoi le port 8000 n'est publié que sur `127.0.0.1` (`API_BIND`, à ne changer que derrière un pare-feu ou si `TRUST_PROXY=false`).
+- `scripts/smoke.py [--base URL] (--mailpit URL | --logs)` : crée un compte jetable `smoke-<horodatage>@example.org` et vérifie la une, `vote/next` (résultats masqués), `halving/config`, le front (`/`, repli SPA, `Referrer-Policy`), le lien magique (usage unique, cookie `httpOnly` `SameSite=Lax`), le rattachement des votes, le vote connecté, `votes/mine`, la déconnexion. Code de sortie 1 et ligne `ÉCART : …` au premier écart. Il consomme un lien magique et quelques votes sur les limites de débit : pas plus de quelques lancements par heure. `--api-only` (avec `--base http://localhost:8000`) le lance contre l'API seule, sans vérifier le front ; sans cette option il exige le HTML du front.
 - La une ne change qu'après le prochain cycle de halving du worker (`python -m app.cli halve` pour le forcer), et la réponse est mise en cache 5 secondes côté API.
 - Tests de l'API : `scripts/test-api.sh` (voir « Tests »). Arrêt : `docker compose --profile mail down` (`-v` pour supprimer aussi la base).
 
@@ -67,6 +67,7 @@ Variables d'environnement (voir `.env.example`) :
 | `CORS_ORIGINS` | Origines autorisées par CORS, séparées par des virgules |
 | `INGEST_INTERVAL_MINUTES` | Minutes entre deux cycles d'ingestion du `worker` (défaut 15) |
 | `APP_BASE_URL` | URL publique du front : le lien de connexion est `{APP_BASE_URL}/connexion?token=…` (défaut `http://localhost:8080`, le service `web`) |
+| `API_BIND` | Interface du port 8000 de l'API (`127.0.0.1` par défaut). Avec `TRUST_PROXY=true`, ne pas l'ouvrir : un hôte pourrait forger `X-Forwarded-For` et contourner les limites par IP |
 | `WEB_BIND`, `WEB_PORT` | Interface (`127.0.0.1`) et port (`8080`) du service `web` sur la machine hôte |
 | `COOKIE_SECURE` | `true` dès que l'API est servie en HTTPS (cookie `Secure`) ; `false` en développement |
 | `SESSION_TTL_DAYS`, `LOGIN_TOKEN_TTL_MINUTES` | Durée de la session (30 jours) et du lien magique (15 minutes) |
