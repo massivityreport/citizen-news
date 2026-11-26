@@ -125,6 +125,9 @@ def main() -> int:
             {"id", "title", "support", "reason", "sources"} <= set(first) and first["support"]["level"] in ("low", "medium", "high"),
             f"carte de la une #{first['id']} : id, title, sources, support, reason",
         )
+        check(isinstance(front.get("has_more"), bool), f"la une expose has_more ({front.get('has_more')})")
+        _, dflt = c.call("GET", "/api/topics/front", expect=200)
+        check(len(dflt["items"]) <= 10, f"la une : {len(dflt['items'])} sujet(s) par défaut (10 au plus)")
         _, nxt = c.call("GET", "/api/vote/next?count=5", expect=200)
         cards = nxt["items"]
         check(len(cards) > 0, f"vote/next renvoie {len(cards)} sujet(s)")
