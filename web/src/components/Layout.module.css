@@ -12,8 +12,8 @@
 .account a:hover, .account button:hover { background: rgb(255 255 255 / .12); }
 .email { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 12rem; }
 
-.nav ul { list-style: none; margin: 0; padding: 0; display: flex; gap: .25rem; overflow-x: auto; }
-.nav a { display: block; padding: .6rem .75rem; white-space: nowrap; color: var(--c-on-primary); text-decoration: none; border-bottom: 3px solid transparent; }
+.nav ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; column-gap: .25rem; }
+.nav a { display: block; padding: .5rem .6rem; font-size: .9rem; color: var(--c-on-primary); text-decoration: none; border-bottom: 3px solid transparent; }
 .nav a:hover { background: rgb(255 255 255 / .1); }
 .nav a[aria-current="page"] { border-bottom-color: var(--c-accent); font-weight: 700; }
 
