@@ -1,0 +1,30 @@
+.intro { color: var(--c-muted); margin: 0 0 1rem; }
+.progress { margin: 0 0 .5rem; font-size: .85rem; color: var(--c-muted); }
+.card { max-width: 40rem; margin-inline: auto; }
+.card h2 { font-size: 1.3rem; }
+.card h2:focus { outline: none; }
+
+.choices { display: grid; gap: .6rem; margin-top: .4rem; }
+.choice { font-weight: 700; padding: .85rem 1rem; border-radius: var(--radius); border: 2px solid var(--c-primary); background: var(--c-surface); color: var(--c-text); text-align: left; min-height: 3rem; }
+.choice:hover:not(:disabled) { background: #efece3; }
+.choice:disabled { opacity: .6; cursor: progress; }
+.choice[aria-pressed="true"] { background: var(--c-primary); color: var(--c-on-primary); }
+.choice[aria-pressed="true"]::after { content: " ✓ (votre choix)"; font-weight: 400; }
+
+.back { margin-top: .8rem; background: none; border: 0; padding: .5rem 0; text-decoration: underline; color: var(--c-text); }
+.back:disabled { opacity: .5; cursor: default; }
+
+.banner { max-width: 40rem; margin: 0 auto 1rem; padding: .8rem 1rem; border-radius: var(--radius); background: #fff4dc; border: 1px solid var(--c-accent); }
+.banner p { margin: 0 0 .5rem; }
+.banner a { font-weight: 700; }
+
+.notice { max-width: 40rem; margin: 0 auto .8rem; padding: .7rem 1rem; border-radius: var(--radius); border: 2px solid var(--c-primary); background: var(--c-surface); }
+
+.state { max-width: 40rem; margin-inline: auto; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--radius); padding: 1.5rem 1rem; text-align: center; }
+.state h2 { font-size: 1.2rem; margin: 0 0 .6rem; }
+.state h2:focus { outline: none; }
+.state p { margin: 0 0 1rem; }
+.btn { display: inline-block; text-decoration: none; font-weight: 700; background: var(--c-primary); color: var(--c-on-primary); padding: .7rem 1.2rem; border-radius: 999px; border: 0; }
+.skeleton { max-width: 40rem; margin-inline: auto; min-height: 18rem; background: linear-gradient(90deg, #ece8dd 25%, #f5f2ea 50%, #ece8dd 75%); background-size: 200% 100%; animation: shimmer 1.4s infinite linear; border: 1px solid var(--c-border); border-radius: var(--radius); }
+@keyframes shimmer { to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } }
