@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderApp } from "../test/utils";
 import type { TopicCard } from "../api/types";
@@ -200,6 +200,33 @@ describe("Flux de vote /jouer", () => {
     await choose("Il faut davantage en parler");
     await screen.findByRole("heading", { name: "Sujet 2" });
     expect(posts(fn)).toHaveLength(2);
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("deux clics synchrones n'envoient qu'un seul vote", async () => {
+    const fn = stubApi({ me: true });
+    renderApp("/jouer");
+    await screen.findByRole("heading", { name: "Sujet 1" });
+    const btn = screen.getByRole("button", { name: "Il faut davantage en parler" });
+    act(() => {
+      btn.click();
+      btn.click();
+    });
+    await screen.findByRole("heading", { name: "Sujet 2" });
+    expect(posts(fn)).toEqual([{ topic_id: 1, choice: "more" }]);
+  });
+
+  it("GET /api/me en erreur 500 : le vote est conservé localement, le flux continue", async () => {
+    vi.stubGlobal("fetch", async (url: string) => {
+      if (url === "/api/me") return new Response("{}", { status: 500 });
+      if (url.startsWith("/api/vote/next")) return new Response(JSON.stringify({ items: [card(1), card(2)] }));
+      return new Response("{}", { status: 404 });
+    });
+    renderApp("/jouer");
+    await screen.findByRole("heading", { name: "Sujet 1" });
+    await choose("Il faut davantage en parler");
+    expect(await screen.findByRole("heading", { name: "Sujet 2" })).toBeInTheDocument();
+    expect(readLocalVotes()).toEqual([{ topic_id: 1, choice: "more" }]);
     expect(screen.queryByRole("alert")).toBeNull();
   });
 

@@ -64,6 +64,8 @@ export function useVoteDeck() {
   const [notice, setNotice] = useState<VoteNotice | null>(null);
   const [busy, setBusy] = useState(false);
   const inFlight = useRef(false);
+  // Garde synchrone contre le double clic dans le même tick (le state `busy` n'est lu qu'au rendu suivant).
+  const voting = useRef(false);
   // Sujets déjà votés dans ce navigateur : on ne les redemande pas.
   const [initialSeen] = useState(() => readLocalVotes().map((v) => v.topic_id));
 
@@ -86,7 +88,8 @@ export function useVoteDeck() {
   const vote = useCallback(
     async (choice: VoteChoice) => {
       const card = cards[index];
-      if (!card || busy) return;
+      if (!card || voting.current) return;
+      voting.current = true;
       setBusy(true);
       setNotice(null);
       try {
@@ -95,8 +98,8 @@ export function useVoteDeck() {
         try {
           me = await qc.fetchQuery({ queryKey: meKey, queryFn: api.me, staleTime: 5 * 60_000 });
         } catch {
-          setNotice({ kind: "error", message: "Impossible d’enregistrer votre choix pour le moment. Réessayez." });
-          return;
+          // /me indisponible (5xx, réseau) : on ne perd pas le vote, il reste dans le navigateur.
+          me = null;
         }
         if (me) {
           try {
@@ -126,10 +129,11 @@ export function useVoteDeck() {
         }
         dispatch({ type: "voted", topicId: card.id, choice });
       } finally {
+        voting.current = false;
         setBusy(false);
       }
     },
-    [cards, index, busy, qc],
+    [cards, index, qc],
   );
 
   const back = useCallback(() => {
