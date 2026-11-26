@@ -44,12 +44,18 @@ export function installMocks() {
       case "POST /votes/claim": {
         if (!session) return json(401, { detail: "Connectez-vous pour enregistrer vos votes." });
         const list = body?.votes ?? [];
-        list.forEach((v) => votes.set(v.topic_id, v.choice));
-        return json(200, { claimed: list.length });
+        // Un vote déjà enregistré n'est pas écrasé par un vote anonyme réclamé.
+        let claimed = 0;
+        for (const v of list) {
+          if (votes.has(v.topic_id)) continue;
+          votes.set(v.topic_id, v.choice);
+          claimed++;
+        }
+        return json(200, { claimed });
       }
       case "GET /votes/mine":
         if (!session) return json(401, { detail: "Non connecté." });
-        return json(200, { items: [...votes].map(([topic_id, choice]) => ({ topic_id, choice })) });
+        return json(200, { votes: [...votes].map(([topic_id, choice]) => ({ topic_id, choice })) });
       case "POST /auth/magic-link":
         if (!body?.email || !String(body.email).includes("@")) return json(422, { detail: "Adresse e-mail invalide." });
         return json(202);

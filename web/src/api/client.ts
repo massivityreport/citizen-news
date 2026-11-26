@@ -83,7 +83,7 @@ export const api = {
   claimVotes: (votes: Vote[]) =>
     request<{ claimed: number }>("/votes/claim", { method: "POST", body: { votes } }),
 
-  myVotes: () => request<unknown>("/votes/mine"),
+  myVotes: () => request<{ votes: Vote[] }>("/votes/mine"),
 
   magicLink: (email: string) =>
     request<void>("/auth/magic-link", { method: "POST", body: { email } }),
