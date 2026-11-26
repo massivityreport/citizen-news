@@ -4,10 +4,11 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request,
 from sqlalchemy.orm import Session
 
 from app.db import get_session
-from app.deps import SESSION_COOKIE, current_account, session_token
+from app.deps import SESSION_COOKIE, client_ip, current_account, session_token
 from app.models.entities import Account
 from app.schemas import EmailOut, MagicLinkRequest, VerifyRequest
 from app.services import auth
+from app.services.ratelimit import RateLimiter, email_key, enforce, get_rate_limiter
 from app.services.mailer import Mailer, get_mailer, login_message
 from config.settings import get_settings
 
@@ -26,21 +27,35 @@ def _send_login_email(mailer: Mailer, email: str, link: str, ttl_minutes: int) -
 
 @router.post("/auth/magic-link", status_code=202)
 def magic_link(
+    request: Request,
     body: MagicLinkRequest,
     background: BackgroundTasks,
     db: Session = Depends(get_session),
     mailer: Mailer = Depends(get_mailer),
+    limiter: RateLimiter = Depends(get_rate_limiter),
 ) -> dict:
     """Always the same answer, whether or not the account exists."""
+    settings = get_settings()
+    window = settings.rate_limit_window_seconds
+    enforce(limiter, f"magic-link:ip:{client_ip(request)}", settings.rate_limit_magic_link_per_ip, window)
+    enforce(limiter, f"magic-link:email:{email_key(body.email)}", settings.rate_limit_magic_link_per_email, window)
     token = auth.create_login_token(db, body.email)
     background.add_task(
-        _send_login_email, mailer, body.email, auth.login_link(token), get_settings().login_token_ttl_minutes
+        _send_login_email, mailer, body.email, auth.login_link(token), settings.login_token_ttl_minutes
     )
     return {}
 
 
 @router.post("/auth/verify", response_model=EmailOut)
-def verify(body: VerifyRequest, response: Response, db: Session = Depends(get_session)):
+def verify(
+    request: Request,
+    body: VerifyRequest,
+    response: Response,
+    db: Session = Depends(get_session),
+    limiter: RateLimiter = Depends(get_rate_limiter),
+):
+    settings = get_settings()
+    enforce(limiter, f"verify:ip:{client_ip(request)}", settings.rate_limit_verify_per_ip, settings.rate_limit_window_seconds)
     email = auth.consume_login_token(db, body.token)
     if email is None:
         raise HTTPException(status_code=400, detail="Lien de connexion invalide ou expiré")

@@ -65,3 +65,12 @@ def _no_stale_front_cache():
     clear_front_cache()
     yield
     clear_front_cache()
+
+
+@pytest.fixture(autouse=True)
+def _fresh_rate_limiter():
+    from app.services.ratelimit import get_rate_limiter
+
+    get_rate_limiter.cache_clear()
+    yield
+    get_rate_limiter.cache_clear()
