@@ -45,12 +45,12 @@ def session(database_url):
         yield s
         s.rollback()
         # Clean tables between tests (CASCADE handles FKs).
-        s.execute(text("TRUNCATE votes, articles, topics, accounts, login_tokens, media_sources RESTART IDENTITY CASCADE"))
+        s.execute(text("TRUNCATE votes, articles, topics, accounts, login_tokens, sessions, media_sources RESTART IDENTITY CASCADE"))
         s.commit()
 
 
 @pytest.fixture
-def client(database_url):
+def client(database_url, session):  # `session` truncates tables after each test
     from fastapi.testclient import TestClient
 
     from app.main import create_app
@@ -65,3 +65,27 @@ def _no_stale_front_cache():
     clear_front_cache()
     yield
     clear_front_cache()
+
+
+@pytest.fixture(autouse=True)
+def _fresh_rate_limiter():
+    from app.services.ratelimit import get_rate_limiter
+
+    get_rate_limiter.cache_clear()
+    yield
+    get_rate_limiter.cache_clear()
+
+
+@pytest.fixture
+def mails():
+    from tests.helpers import RecordingMailer
+
+    return RecordingMailer()
+
+
+@pytest.fixture
+def api(client, mails):
+    from app.services.mailer import get_mailer
+
+    client.app.dependency_overrides[get_mailer] = lambda: mails
+    return client

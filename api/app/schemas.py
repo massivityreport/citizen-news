@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class SourceOut(BaseModel):
@@ -43,3 +43,50 @@ class FrontResponse(BaseModel):
 
 class VoteNextResponse(BaseModel):
     items: list[TopicCard]
+
+
+# --- Authentication and votes ---
+
+import re
+
+from pydantic import field_validator
+
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s.]+(\.[^@\s.]+)+$")
+
+
+class MagicLinkRequest(BaseModel):
+    email: str
+
+    @field_validator("email")
+    @classmethod
+    def _normalize(cls, value: str) -> str:
+        email = value.strip().lower()
+        if len(email) > 254 or not _EMAIL_RE.match(email):
+            raise ValueError("adresse e-mail invalide")
+        return email
+
+
+class VerifyRequest(BaseModel):
+    token: str
+
+
+class EmailOut(BaseModel):
+    email: str
+
+
+class VoteItem(BaseModel):
+    topic_id: int
+    choice: Literal["more", "not_priority", "unknown"]
+
+
+class ClaimRequest(BaseModel):
+    # Hard bound checked while parsing; the configurable cap (CLAIM_MAX_VOTES) is enforced in the route.
+    votes: list[VoteItem] = Field(max_length=1000)
+
+
+class ClaimResponse(BaseModel):
+    claimed: int
+
+
+class MyVotes(BaseModel):
+    votes: list[VoteItem]
