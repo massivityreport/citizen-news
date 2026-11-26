@@ -1,5 +1,5 @@
 import { api, ApiError } from "../api/client";
-import { clearLocalVotes, readLocalVotes } from "./storage";
+import { readLocalVotes, removeLocalVotes } from "./storage";
 
 /** Taille maximale d'un lot accepté par POST /api/votes/claim. */
 export const CLAIM_BATCH_SIZE = 200;
@@ -29,7 +29,8 @@ async function run(): Promise<ClaimResult> {
     }
   }
   // Un vote déjà enregistré côté serveur n'est pas écrasé : claimed peut être < sent, on vide quand même.
-  clearLocalVotes();
+  // Seulement les votes envoyés : un vote local enregistré pendant le claim reste pour la prochaine fois.
+  removeLocalVotes(votes);
   return { status: "ok", sent: votes.length, claimed };
 }
 

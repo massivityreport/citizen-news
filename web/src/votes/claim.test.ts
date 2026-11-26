@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { bodiesOf, res, stubFetch } from "../test/api-stub";
 import { claimLocalVotes, CLAIM_BATCH_SIZE } from "./claim";
-import { readLocalVotes, STORAGE_KEY } from "./storage";
+import { readLocalVotes, saveLocalVote, STORAGE_KEY } from "./storage";
 
 const seed = (n: number) =>
   localStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from({ length: n }, (_, i) => ({ topic_id: i + 1, choice: "more" }))));
@@ -21,6 +21,22 @@ describe("claimLocalVotes", () => {
     stubFetch({ "POST /api/votes/claim": () => res(200, { claimed: 1 }) });
     expect(await claimLocalVotes()).toEqual({ status: "ok", sent: 3, claimed: 1 });
     expect(readLocalVotes()).toEqual([]);
+  });
+
+  it("conserve un vote local enregistré pendant le claim", async () => {
+    seed(2);
+    stubFetch({
+      "POST /api/votes/claim": () => {
+        saveLocalVote({ topic_id: 99, choice: "unknown" });
+        saveLocalVote({ topic_id: 1, choice: "not_priority" }); // choix modifié pendant l'envoi
+        return res(200, { claimed: 2 });
+      },
+    });
+    await claimLocalVotes();
+    expect(readLocalVotes()).toEqual([
+      { topic_id: 99, choice: "unknown" },
+      { topic_id: 1, choice: "not_priority" },
+    ]);
   });
 
   it("envoie par lots de 200 et additionne les votes créés", async () => {

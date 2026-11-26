@@ -48,6 +48,20 @@ export function saveLocalVote(vote: Vote): boolean {
   }
 }
 
+/** Retire uniquement les votes donnés (même sujet et même choix) : un vote enregistré entre-temps est conservé. */
+export function removeLocalVotes(sent: Vote[]): void {
+  try {
+    const s = storage();
+    if (!s) return;
+    const gone = new Set(sent.map((v) => `${v.topic_id}:${v.choice}`));
+    const rest = readLocalVotes().filter((v) => !gone.has(`${v.topic_id}:${v.choice}`));
+    if (rest.length === 0) s.removeItem(STORAGE_KEY);
+    else s.setItem(STORAGE_KEY, JSON.stringify(rest));
+  } catch {
+    /* stockage indisponible : rien à retirer */
+  }
+}
+
 /** Vide la liste locale (à appeler après un POST /api/votes/claim réussi). */
 export function clearLocalVotes(): void {
   try {
