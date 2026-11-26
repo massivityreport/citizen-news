@@ -7,6 +7,7 @@ Candidates: topics active within the clustering window, not in `reserve`. A topi
 Ranking: support_weight * score + freshness_weight * freshness, where freshness = 0.5 ** (age / half-life)
 of the topic's latest article (`topics.updated_at`). Ties: most recent first. Three SQL statements
 (topics with source counts, vote statistics, cards), whatever the number of topics.
+Returns (the first `limit` topics, whether more ranked topics exist beyond them).
 """
 
 from datetime import UTC, datetime, timedelta
@@ -23,7 +24,7 @@ from config.front import FrontParams
 
 def front_topics(
     session: Session, limit: int, clustering: ClusteringParams, cfg: FrontParams, now: datetime | None = None
-) -> list[tuple[Topic, SupportOut, ReasonOut]]:
+) -> tuple[list[tuple[Topic, SupportOut, ReasonOut]], bool]:
     now = now or datetime.now(UTC)
     cutoff = now - timedelta(hours=clustering.window_hours)
     sources = (
@@ -53,4 +54,5 @@ def front_topics(
         rank = cfg.ranking.support_weight * s.score + cfg.ranking.freshness_weight * freshness
         ranked.append((rank, topic, support, reason))
     ranked.sort(key=lambda r: (-r[0], -r[1].updated_at.timestamp(), -r[1].id))
-    return [(topic, support, reason) for _, topic, support, reason in ranked[:limit]]
+    items = [(topic, support, reason) for _, topic, support, reason in ranked[:limit]]
+    return items, len(ranked) > limit
