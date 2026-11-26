@@ -16,7 +16,9 @@ services:
       retries: 20
 
   api:
-    build: ./api
+    build:
+      context: ./api
+      target: api
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-citizen}:${POSTGRES_PASSWORD:-citizen_dev_only}@db:5432/${POSTGRES_DB:-citizen_news}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
@@ -55,12 +57,70 @@ services:
 
   # Periodic ingestion + clustering. Starts once the API is healthy, i.e. once migrations are applied.
   worker:
-    build: ./api
+    build:
+      context: ./api
+      target: api
     command: ["python", "-m", "app.cli", "run", "--interval-minutes", "${INGEST_INTERVAL_MINUTES:-15}"]
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-citizen}:${POSTGRES_PASSWORD:-citizen_dev_only}@db:5432/${POSTGRES_DB:-citizen_news}
     depends_on:
       api:
+        condition: service_healthy
+
+  # Tests de l'API (profil `test`, jamais lancé par `docker compose up`) : `scripts/test-api.sh` ou
+  # `docker compose --profile test run --rm api-test [pytest ...]`. Voir api/README.md.
+  # PostgreSQL à empreinte minimale : données en tmpfs, aucune durabilité (fsync off), peu de mémoire partagée.
+  db-test:
+    image: postgres:16
+    profiles: ["test"]
+    environment:
+      POSTGRES_USER: citizen
+      POSTGRES_PASSWORD: citizen_test_only
+      POSTGRES_DB: postgres
+    command:
+      - postgres
+      - -c
+      - shared_buffers=16MB
+      - -c
+      - max_connections=30
+      - -c
+      - work_mem=2MB
+      - -c
+      - maintenance_work_mem=8MB
+      - -c
+      - wal_buffers=1MB
+      - -c
+      - min_wal_size=32MB
+      - -c
+      - max_wal_size=64MB
+      - -c
+      - fsync=off
+      - -c
+      - synchronous_commit=off
+      - -c
+      - full_page_writes=off
+      - -c
+      - autovacuum=off
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U citizen -d postgres"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # Cible `test` du Dockerfile ; le code est monté en lecture seule : modifier le code ne demande aucun rebuild.
+  api-test:
+    build:
+      context: ./api
+      target: test
+    profiles: ["test"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://citizen:citizen_test_only@db-test:5432/postgres
+    volumes:
+      - ./api:/srv/api:ro
+    depends_on:
+      db-test:
         condition: service_healthy
 
   # Optional local mail catcher: `docker compose --profile mail up`, then MAIL_BACKEND=smtp SMTP_HOST=mailpit

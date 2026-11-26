@@ -3,3 +3,4 @@ __pycache__
 .venv
 *.egg-info
 requirements.txt
+requirements-test.txt
