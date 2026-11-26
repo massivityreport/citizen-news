@@ -26,6 +26,7 @@ def test_seed_demo_is_refused_in_production(session, monkeypatch, demo_on):
     monkeypatch.setenv("COOKIE_SECURE", "true")
     monkeypatch.setenv("MAIL_BACKEND", "smtp")
     monkeypatch.setenv("SMTP_HOST", "smtp.example.org")
+    monkeypatch.setenv("ADMIN_PASSWORD", "un-vrai-secret-long")  # otherwise the settings themselves are refused
     get_settings.cache_clear()
     assert cli.main(["seed-demo"]) == 2
     assert session.scalar(select(func.count()).select_from(Topic)) == 0

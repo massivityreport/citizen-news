@@ -96,3 +96,7 @@ class ClaimResponse(BaseModel):
 
 class MyVotes(BaseModel):
     votes: list[VoteItem]
+
+
+class AdminLoginRequest(BaseModel):
+    password: str = Field(max_length=1024)

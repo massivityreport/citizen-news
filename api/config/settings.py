@@ -2,13 +2,18 @@
 
 from functools import lru_cache
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 from typing import Annotated, Literal
 
 
+# Development-only admin password. The API refuses to start with it when COOKIE_SECURE=true.
+DEFAULT_ADMIN_PASSWORD = "make-media-great-again"
+
+
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    # hide_input_in_errors: a validation error at startup must not echo secrets (passwords, DATABASE_URL).
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore", hide_input_in_errors=True)
 
     # SQLAlchemy URL, e.g. postgresql+psycopg://user:password@host:5432/dbname
     database_url: str
@@ -43,6 +48,12 @@ class Settings(BaseSettings):
     rate_limit_vote_window_seconds: int = 60
     # Allows `python -m app.cli seed-demo` (fictional topics, accounts and votes). Development only: refused with COOKIE_SECURE=true.
     demo_seed: bool = False
+    # Back office: one shared password (no accounts). SecretStr keeps it out of reprs and logs.
+    admin_password: SecretStr = Field(SecretStr(DEFAULT_ADMIN_PASSWORD), min_length=1)
+    admin_session_hours: int = Field(8, ge=1, le=24 * 30)
+    # Admin login attempts per IP, over their own window (brute-force protection).
+    rate_limit_admin_login_per_ip: int = 10
+    rate_limit_admin_login_window_seconds: int = 900
     # Take the client IP from X-Forwarded-For (last entry, added by the reverse proxy). Only behind a proxy.
     trust_proxy: bool = False
 
@@ -70,6 +81,19 @@ class Settings(BaseSettings):
             raise ValueError(
                 "MAIL_BACKEND=console is for development only and cannot be used with COOKIE_SECURE=true: "
                 "login links would be written to the logs. Set MAIL_BACKEND=smtp (and SMTP_HOST)."
+            )
+        return self
+
+    @property
+    def admin_password_is_default(self) -> bool:
+        return self.admin_password.get_secret_value() == DEFAULT_ADMIN_PASSWORD
+
+    @model_validator(mode="after")
+    def _no_default_admin_password_in_production(self):
+        if self.admin_password_is_default and self.cookie_secure:
+            raise ValueError(
+                "ADMIN_PASSWORD is the development default and cannot be used with COOKIE_SECURE=true: "
+                "anyone could open the back office. Set ADMIN_PASSWORD to a long secret of your own."
             )
         return self
 

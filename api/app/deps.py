@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_session
 from app.models.entities import Account
-from app.services import auth
+from app.services import admin as admin_service, auth
 from config.settings import get_settings
 
 SESSION_COOKIE = "cn_session"
@@ -38,3 +38,17 @@ def optional_account(request: Request, db: Session = Depends(get_session)) -> Ac
     """The logged-in account if there is a valid session, else None (routes usable without an account)."""
     token = session_token(request)
     return auth.account_for_session(db, token) if token else None
+
+
+ADMIN_COOKIE = "cn_admin"
+
+
+def require_admin(request: Request, db: Session = Depends(get_session)) -> None:
+    """401 unless the request carries a valid, unexpired back-office cookie (cn_admin).
+
+    Every /api/admin route except login depends on it: put new routes on `admin.protected`.
+    A citizen session (cn_session) never satisfies it.
+    """
+    token = request.cookies.get(ADMIN_COOKIE)
+    if not token or not admin_service.is_valid_session(db, token):
+        raise HTTPException(status_code=401, detail="Authentification administrateur requise")
