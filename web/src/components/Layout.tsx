@@ -1,5 +1,6 @@
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { AccountMenu } from "./AccountMenu";
+import { useClaimOnSession } from "../votes";
 import styles from "./Layout.module.css";
 
 const NAV = [
@@ -10,6 +11,7 @@ const NAV = [
 
 export function Layout() {
   const { pathname } = useLocation();
+  useClaimOnSession();
   const showFixedCta = pathname !== "/jouer";
 
   return (
