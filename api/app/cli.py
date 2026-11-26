@@ -10,7 +10,9 @@ from collections.abc import Sequence
 from sqlalchemy.orm import Session
 
 from app.db import get_engine
+from config.settings import get_settings
 from app.services.clustering import cluster
+from app.services.demo import seed_demo
 from app.services.halving import halve
 from app.services.ingest import ingest
 
@@ -52,6 +54,20 @@ def run_halve() -> int:
     return 0
 
 
+def run_seed_demo(seed: int = 1) -> int:
+    settings = get_settings()
+    if settings.cookie_secure or not settings.demo_seed:
+        log.error("seed-demo est réservé au développement : définissez DEMO_SEED=true (refusé avec COOKIE_SECURE=true)")
+        return 2
+    with Session(get_engine()) as session:
+        report = seed_demo(session, seed=seed)
+    log.info(
+        "démo : %d sujets, %d comptes, %d votes ; halving : %d promus (dont %d émergents), %d en réserve",
+        report.topics, report.accounts, report.votes, report.halving.promoted, report.halving.emerged, report.halving.demoted,
+    )
+    return 0
+
+
 def run_refresh() -> int:
     code = run_ingest()
     run_cluster()
@@ -86,6 +102,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     sub.add_parser("cluster", help="regroupe les articles en sujets")
     sub.add_parser("halve", help="recalcule l'état et la vague des sujets d'après les votes")
     sub.add_parser("refresh", help="ingest, cluster puis halve")
+    demo = sub.add_parser("seed-demo", help="crée des sujets, comptes et votes fictifs (développement, DEMO_SEED=true)")
+    demo.add_argument("--seed", type=int, default=1, help="graine du générateur (défaut 1)")
     run = sub.add_parser("run", help="refresh en boucle")
     run.add_argument(
         "--interval-minutes",
@@ -103,6 +121,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         for sig in (signal.SIGINT, signal.SIGTERM):
             signal.signal(sig, lambda *_: stop.set())
         return run_loop(args.interval_minutes, stop)
+    if args.command == "seed-demo":
+        return run_seed_demo(args.seed)
     return {"ingest": run_ingest, "cluster": run_cluster, "halve": run_halve, "refresh": run_refresh}[args.command]()
 
 
