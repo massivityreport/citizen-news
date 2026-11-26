@@ -43,3 +43,32 @@ class FrontResponse(BaseModel):
 
 class VoteNextResponse(BaseModel):
     items: list[TopicCard]
+
+
+# --- Authentication and votes ---
+
+import re
+
+from pydantic import field_validator
+
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s.]+(\.[^@\s.]+)+$")
+
+
+class MagicLinkRequest(BaseModel):
+    email: str
+
+    @field_validator("email")
+    @classmethod
+    def _normalize(cls, value: str) -> str:
+        email = value.strip().lower()
+        if len(email) > 254 or not _EMAIL_RE.match(email):
+            raise ValueError("adresse e-mail invalide")
+        return email
+
+
+class VerifyRequest(BaseModel):
+    token: str
+
+
+class EmailOut(BaseModel):
+    email: str

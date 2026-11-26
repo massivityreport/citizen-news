@@ -50,7 +50,7 @@ def session(database_url):
 
 
 @pytest.fixture
-def client(database_url):
+def client(database_url, session):  # `session` truncates tables after each test
     from fastapi.testclient import TestClient
 
     from app.main import create_app
