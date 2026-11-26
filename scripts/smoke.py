@@ -122,13 +122,14 @@ def main() -> int:
         check(len(items) > 0, f"la une contient {len(items)} sujet(s) (lancez refresh / seed-demo sinon)")
         first = items[0]
         check(
-            {"id", "title", "support", "reason", "sources"} <= set(first) and first["support"]["level"] in ("low", "medium", "high"),
-            f"carte de la une #{first['id']} : id, title, sources, support, reason",
+            {"id", "title", "support", "reason", "sources", "image_url"} <= set(first)
+            and (first["image_url"] is None or str(first["image_url"]).startswith("https://")) and first["support"]["level"] in ("low", "medium", "high"),
+            f"carte de la une #{first['id']} : id, title, sources, support, reason, image_url (null ou https)",
         )
         _, nxt = c.call("GET", "/api/vote/next?count=5", expect=200)
         cards = nxt["items"]
         check(len(cards) > 0, f"vote/next renvoie {len(cards)} sujet(s)")
-        check(all("support" not in k and "reason" not in k for k in cards), "vote/next masque support et reason")
+        check(all("support" not in k and "reason" not in k and "image_url" in k for k in cards), "vote/next masque support et reason, expose image_url")
         _, cfg = c.call("GET", "/api/halving/config", expect=200)
         check(set(cfg["params"]) == set(cfg["description"]) and "keep_ratio" in cfg["params"], "GET /api/halving/config")
 

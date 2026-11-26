@@ -126,7 +126,7 @@ def test_extreme_shares():
 
 # --- GET /api/vote/next ---
 
-CARD_KEYS = {"id", "title", "summary", "sources", "first_seen_at", "updated_at"}
+CARD_KEYS = {"id", "title", "summary", "sources", "first_seen_at", "updated_at", "image_url"}
 
 
 @pytest.fixture
