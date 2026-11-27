@@ -1,6 +1,0 @@
-# Successive Halving severity. Only the parameters live here; the algorithm is implemented elsewhere.
-min_votes_first_decision: 20   # votes a new topic must receive before the first decision
-keep_ratio: 0.5                # share of topics kept at each wave
-waves: 3                       # number of waves
-new_topic_traffic_share: 0.30  # share of the vote flow reserved for new topics
-rescue_share: 0.10             # share of the vote flow reserved for reserve topics

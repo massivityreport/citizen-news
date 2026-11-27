@@ -1,7 +1,6 @@
 """HTTP response models (see docs/api-contract.md)."""
 
 from datetime import datetime
-from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -13,41 +12,19 @@ class SourceOut(BaseModel):
     published_at: datetime | None
 
 
-class SupportOut(BaseModel):
-    level: Literal["low", "medium", "high"]
-    votes_count: int
-
-
-class ReasonOut(BaseModel):
-    code: Literal["common_priority", "strong_mobilisation", "under_the_radar", "emerging"]
-    label: str
-
-
 class TopicCard(BaseModel):
     id: int
     title: str
     summary: str
     sources: list[SourceOut]
+    article_count: int
+    source_count: int
     first_seen_at: datetime
     updated_at: datetime
     image_url: str | None
 
 
-class FrontTopic(TopicCard):
-    support: SupportOut
-    reason: ReasonOut
-
-
-class FrontResponse(BaseModel):
-    items: list[FrontTopic]
-    has_more: bool
-
-
-class VoteNextResponse(BaseModel):
-    items: list[TopicCard]
-
-
-# --- Authentication and votes ---
+# --- Authentication ---
 
 import re
 
@@ -76,28 +53,6 @@ class EmailOut(BaseModel):
     email: str
 
 
-class VoteItem(BaseModel):
-    topic_id: int
-    choice: Literal["more", "not_priority", "unknown"]
-
-
-class VoteRequest(VoteItem):
-    pass
-
-
-class ClaimRequest(BaseModel):
-    # Hard bound checked while parsing; the configurable cap (CLAIM_MAX_VOTES) is enforced in the route.
-    votes: list[VoteItem] = Field(max_length=1000)
-
-
-class ClaimResponse(BaseModel):
-    claimed: int
-
-
-class MyVotes(BaseModel):
-    votes: list[VoteItem]
-
-
 class AdminLoginRequest(BaseModel):
     password: str = Field(max_length=1024)
 
@@ -124,7 +79,7 @@ class AdminSourceDeleted(BaseModel):
     deleted_articles: int
 
 
-# --- Back office: articles, topics, votes (read only; never any personal data) ---
+# --- Back office: articles, topics (read only; never any personal data) ---
 
 
 class AdminSourceRef(BaseModel):
@@ -156,19 +111,12 @@ class AdminArticlePage(BaseModel):
     page_size: int
 
 
-TopicState = Literal["new", "active", "reserve", "emerged"]
-VoteChoiceName = Literal["more", "not_priority", "unknown"]
-
-
 class AdminTopicRow(BaseModel):
     id: int
     title: str
-    state: TopicState
-    wave: int
-    state_changed_at: datetime | None
+    updated_at: datetime
     article_count: int
     source_count: int
-    vote_count: int
     image_url: str | None
 
 
@@ -179,65 +127,19 @@ class AdminTopicPage(BaseModel):
     page_size: int
 
 
-class AdminVoteOut(BaseModel):
-    date: datetime
-    choice: VoteChoiceName
-    account_id: int  # the account number: never an e-mail address nor anything personal
-
-
-class AdminVotePage(BaseModel):
-    items: list[AdminVoteOut]
-    total: int
-    page: int
-    page_size: int
-
-
-class AdminSupportOut(BaseModel):
-    score: float
-    level: Literal["low", "medium", "high"]
-    votes_count: int
-
-
-class AdminFrontOut(BaseModel):
-    on_front: bool
-    reason: ReasonOut | None
-
-
 class AdminStatsCounts(BaseModel):
     articles: int
-    votes: int
-    voters: int
 
 
 class AdminStatsDay(BaseModel):
     date: str  # YYYY-MM-DD, UTC
     articles: int
-    votes: int
-    voters: int  # distinct accounts that voted this day: not additive across days
 
 
 class AdminStats(BaseModel):
     last_24h: AdminStatsCounts
     total: AdminStatsCounts
     series: list[AdminStatsDay]
-
-
-class AdminVoteDay(BaseModel):
-    date: str  # YYYY-MM-DD, UTC
-    more: int
-    not_priority: int
-    unknown: int
-    total: int
-
-
-class AdminVoteSummary(BaseModel):
-    more: int
-    not_priority: int
-    unknown: int
-    total: int
-    voters: int
-    first_vote_at: datetime | None
-    daily: list[AdminVoteDay]
 
 
 class AdminTopicArticle(BaseModel):
@@ -252,16 +154,9 @@ class AdminTopicDetail(BaseModel):
     id: int
     title: str
     summary: str
-    state: TopicState
-    wave: int
     first_seen_at: datetime
     updated_at: datetime
-    state_changed_at: datetime | None
-    evaluated_at: datetime | None
     article_count: int
     source_count: int
-    support: AdminSupportOut
-    front: AdminFrontOut
-    votes: AdminVoteSummary
     articles: list[AdminTopicArticle]
     articles_truncated: bool

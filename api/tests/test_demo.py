@@ -2,7 +2,7 @@ import pytest
 from sqlalchemy import func, select
 
 from app import cli
-from app.models import Account, Topic, Vote
+from app.models import Article, MediaSource, Topic
 from config.settings import get_settings
 
 
@@ -32,20 +32,21 @@ def test_seed_demo_is_refused_in_production(session, monkeypatch, demo_on):
     assert session.scalar(select(func.count()).select_from(Topic)) == 0
 
 
-def test_seed_demo_fills_the_front_and_the_halving(session, client, demo_on):
+def test_seed_demo_creates_demo_topics_with_articles(session, demo_on):
     assert cli.main(["seed-demo"]) == 0
     session.expire_all()
-    states = dict(session.execute(select(Topic.state, func.count()).group_by(Topic.state)).all())
-    assert states.get("reserve") and states.get("new") and (states.get("active") or states.get("emerged"))
-    codes = {i["reason"]["code"] for i in client.get("/api/topics/front?limit=50").json()["items"]}
-    assert codes == {"common_priority", "strong_mobilisation", "under_the_radar", "emerging"}
-    assert all(t.title.startswith("[Démo]") for t in session.scalars(select(Topic)))
-    assert all(a.email.endswith("@demo.invalid") for a in session.scalars(select(Account)))
+    topics = list(session.scalars(select(Topic)))
+    assert topics and all(t.title.startswith("[Démo]") for t in topics)
+    assert session.scalar(select(func.count()).select_from(Article)) >= len(topics)
+    assert all(m.feed_url.startswith("https://demo.invalid/") for m in session.scalars(select(MediaSource)))
+    # a mix of widely, little and single-medium covered topics
+    covers = set(session.execute(select(func.count(func.distinct(Article.source_id))).group_by(Article.topic_id)).scalars())
+    assert covers == {1, 2, 3}
 
 
 def test_seed_demo_can_be_repeated_without_duplicates(session, demo_on):
     assert cli.main(["seed-demo"]) == 0
-    counts = [session.scalar(select(func.count()).select_from(m)) for m in (Topic, Account, Vote)]
+    counts = [session.scalar(select(func.count()).select_from(m)) for m in (Topic, Article, MediaSource)]
     assert cli.main(["seed-demo"]) == 0
     session.expire_all()
-    assert counts == [session.scalar(select(func.count()).select_from(m)) for m in (Topic, Account, Vote)]
+    assert counts == [session.scalar(select(func.count()).select_from(m)) for m in (Topic, Article, MediaSource)]

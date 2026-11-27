@@ -4,7 +4,7 @@ Algorithm (deterministic for a given database state and `now`):
 - Candidates: articles without topic published in the last `window_hours`, in (date, id) order.
 - Existing topics whose last article is within the window can still accept articles; older ones are frozen.
 - Each article joins the closest topic whose cosine similarity to the topic centroid reaches
-  `similarity_threshold`; otherwise it starts a new topic (state=new, wave=0).
+  `similarity_threshold`; otherwise it starts a new topic.
 - Rerunning with no new article changes nothing (assigned articles are never moved).
 
 Dates: an article's date is published_at, or fetched_at when the feed gave none. A topic's

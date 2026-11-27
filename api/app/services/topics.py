@@ -24,20 +24,24 @@ def eligible_topics(params: ClusteringParams, now: datetime | None = None):
 
 def build_cards(session: Session, topics: list[Topic]) -> list[TopicCard]:
     """TopicCards for `topics` (order kept). `sources` holds one entry per medium: its latest article.
-    `image_url` is the image of the topic's most recent article that has one, else None."""
+    `article_count` / `source_count`: all the topic's articles / distinct media. `image_url` is the image of the topic's most recent article that has one, else None."""
     if not topics:
         return []
     rows = session.execute(
         select(
             Article.topic_id, MediaSource.name, Article.url, Article.title, Article.published_at, Article.fetched_at,
-            Article.id, Article.image_url,
+            Article.id, Article.image_url, Article.source_id,
         )
         .join(MediaSource, MediaSource.id == Article.source_id)
         .where(Article.topic_id.in_([t.id for t in topics]))
     ).all()
     latest: dict[tuple[int, str], tuple] = {}
     images: dict[int, tuple] = {}
-    for topic_id, name, url, title, published_at, fetched_at, article_id, image_url in rows:
+    articles: dict[int, int] = {t.id: 0 for t in topics}
+    media: dict[int, set[int]] = {t.id: set() for t in topics}
+    for topic_id, name, url, title, published_at, fetched_at, article_id, image_url, source_id in rows:
+        articles[topic_id] += 1
+        media[topic_id].add(source_id)
         if image_url:  # most recent article (published_at desc, nulls last, then id desc) that has one
             rank = (published_at or datetime.min.replace(tzinfo=UTC), article_id)
             if topic_id not in images or rank > images[topic_id][0]:
@@ -57,6 +61,8 @@ def build_cards(session: Session, topics: list[Topic]) -> list[TopicCard]:
             title=t.title,
             summary=t.summary,
             sources=by_topic[t.id],
+            article_count=articles[t.id],
+            source_count=len(media[t.id]),
             first_seen_at=t.first_seen_at,
             updated_at=t.updated_at,
             image_url=images[t.id][1] if t.id in images else None,

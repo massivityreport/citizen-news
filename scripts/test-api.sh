@@ -3,7 +3,7 @@
 # exécute pytest, puis arrête PostgreSQL (même sur Ctrl-C ou kill). Arguments = arguments de pytest.
 #   scripts/test-api.sh                       # toute la suite
 #   scripts/test-api.sh tests/test_auth.py    # un seul fichier
-#   scripts/test-api.sh -k halving -x
+#   scripts/test-api.sh -k clustering -x
 set -u
 cd "$(dirname "$0")/.."
 

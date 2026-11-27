@@ -1,6 +1,6 @@
 # Citizen News
 
-Plateforme d'actualité participative : les citoyens votent sur les sujets qui méritent davantage d'attention, et une « une citoyenne » émerge par Successive Halving. Voir [le brief](docs/citizen-news-brief.md) et [le contrat HTTP](docs/api-contract.md).
+Plateforme d'actualité participative : chaque citoyen compose sa une de 10 sujets, modifiable jusqu'à 17 h ; à 17 h on agrège les unes et on publie une une citoyenne collective, figée. Voir [le brief V2](docs/citizen-news-brief-v2.md) et [le contrat HTTP](docs/api-contract.md).
 
 ## Prérequis
 
@@ -31,7 +31,7 @@ cp .env.example .env
 #   MAIL_BACKEND=smtp  SMTP_HOST=mailpit  SMTP_PORT=1025  SMTP_STARTTLS=false  DEMO_SEED=true
 docker compose --profile mail up --build -d      # db, api, worker, web, mailpit
 docker compose exec worker python -m app.cli refresh   # premier ingest + regroupement (le worker le refera toutes les 15 min)
-docker compose run --rm -e DEMO_SEED=true api python -m app.cli seed-demo   # optionnel : sujets, comptes et votes fictifs
+docker compose run --rm -e DEMO_SEED=true api python -m app.cli seed-demo   # optionnel : médias et sujets fictifs
 python3 scripts/smoke.py --mailpit http://localhost:8025   # (pile backend seule : ajouter --api-only --base http://localhost:8000) parcours de bout en bout
 ```
 
@@ -43,8 +43,8 @@ python3 scripts/smoke.py --mailpit http://localhost:8025   # (pile backend seule
 
 - `APP_BASE_URL` vaut `http://localhost:8080` par défaut : le lien magique pointe sur le front. Sans mailpit (`MAIL_BACKEND=console`), passez `--logs` à `smoke.py` au lieu de `--mailpit` : il lit le lien dans `docker compose logs api`.
 - Le navigateur n'appelle que `http://localhost:8080` : nginx proxifie `/api/` vers `api:8000`, donc même origine, pas de CORS ni de souci de cookie (`CORS_ORIGINS` reste configuré pour `npm run dev`, port 5173). `TRUST_PROXY` vaut `true` par défaut dans le compose : l'API lit l'IP cliente dans `X-Forwarded-For` posé par nginx, sinon toutes les limites par IP verraient l'adresse de nginx. Si vous atteignez l'API directement sur le port 8000, un client peut forger cet en-tête : c'est pourquoi le port 8000 n'est publié que sur `127.0.0.1` (`API_BIND`, à ne changer que derrière un pare-feu ou si `TRUST_PROXY=false`).
-- `scripts/smoke.py [--base URL] (--mailpit URL | --logs)` : crée un compte jetable `smoke-<horodatage>@example.org` et vérifie la une, `vote/next` (résultats masqués), `halving/config`, le front (`/`, repli SPA, `Referrer-Policy`), le lien magique (usage unique, cookie `httpOnly` `SameSite=Lax`), le rattachement des votes, le vote connecté, `votes/mine`, la déconnexion. Code de sortie 1 et ligne `ÉCART : …` au premier écart. Il consomme un lien magique et quelques votes sur les limites de débit : pas plus de quelques lancements par heure. `--api-only` (avec `--base http://localhost:8000`) le lance contre l'API seule, sans vérifier le front ; sans cette option il exige le HTML du front.
-- La une ne change qu'après le prochain cycle de halving du worker (`python -m app.cli halve` pour le forcer), et la réponse est mise en cache 5 secondes côté API.
+- `scripts/smoke.py [--base URL] (--mailpit URL | --logs)` : crée un compte jetable `smoke-<horodatage>@example.org` et vérifie le front (`/`, repli SPA, `Referrer-Policy`), le lien magique (usage unique, cookie `httpOnly` `SameSite=Lax`), la déconnexion. **Il vérifie encore des routes V1 supprimées (`topics/front`, `vote/next`, `halving/config`, votes) : il échoue tant que la dernière tâche V2 ne l'a pas réécrit.** Code de sortie 1 et ligne `ÉCART : …` au premier écart. Il consomme un lien magique et quelques requêtes sur les limites de débit : pas plus de quelques lancements par heure. `--api-only` (avec `--base http://localhost:8000`) le lance contre l'API seule, sans vérifier le front ; sans cette option il exige le HTML du front.
+- La une collective sera publiée par le worker à 17 h (Europe/Paris) : tâches V2 suivantes.
 - Tests de l'API : `scripts/test-api.sh` (voir « Tests »). Arrêt : `docker compose --profile mail down` (`-v` pour supprimer aussi la base).
 
 ### Limites connues
@@ -78,36 +78,31 @@ Variables d'environnement (voir `.env.example`) :
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_STARTTLS`, `MAIL_FROM` | Serveur SMTP (port 587 et STARTTLS par défaut ; `SMTP_HOST` obligatoire avec `smtp`). Le mot de passe ne vient que de l'environnement |
 | `TRUST_PROXY` | `true` derrière un reverse proxy (défaut du compose : nginx du service `web`) : l'IP cliente est la dernière entrée de `X-Forwarded-For` (sinon l'en-tête est ignoré) |
 | `DEMO_SEED` | `true` autorise `python -m app.cli seed-demo` (données fictives, développement seulement ; refusé avec `COOKIE_SECURE=true`) |
-| `RATE_LIMIT_*`, `CLAIM_MAX_VOTES` | Limites de débit (dont `RATE_LIMIT_VOTE_PER_ACCOUNT`, 120 votes par minute et par compte) et plafond du rattachement de votes (voir [api/README.md](api/README.md)) |
+| `RATE_LIMIT_*` | Limites de débit (voir [api/README.md](api/README.md)) |
 
-Fichiers dans `api/config/` : `feeds.yaml` (flux RSS de départ : il n'initialise que la base, qui reste la référence, gérée depuis /admin, onglet Sources), `clustering.yaml` (seuil de similarité, fenêtre de temps, sources minimales pour la une) et `halving.yaml` (sévérité du halving) et `front.yaml` (seuils et classement de la une) ; valeurs validées au chargement, hors bornes refusées. Le fonctionnement du halving est expliqué dans [docs/halving.md](docs/halving.md).
+Fichiers dans `api/config/` : `feeds.yaml` (flux RSS de départ : il n'initialise que la base, qui reste la référence, gérée depuis /admin, onglet Sources), `clustering.yaml` (seuil de similarité, fenêtre de temps, sources minimales pour qu'un sujet soit éligible) ; valeurs validées au chargement, hors bornes refusées.
 
 ## Backoffice
 
 - **Accès** : <http://localhost:8080/admin> (page non indexée). Connexion par le mot de passe unique `ADMIN_PASSWORD` (voir « Configuration » : à changer en production), session de `ADMIN_SESSION_HOURS` heures dans un cookie `cn_admin` distinct de la session citoyenne. Pas de comptes ni de rôles.
-- **Accueil** : chiffres clés (articles ingérés, votes et votants sur les 24 dernières heures glissantes et au total) et trois courbes sur 30 jours (articles, votes, votants distincts par jour ; jours en UTC). Le bouton « Actualiser » recharge ; pas de rafraîchissement automatique. Les votants par jour ne s'additionnent pas d'un jour à l'autre.
+- **Accueil** : chiffres clés (articles ingérés sur les 24 dernières heures glissantes et au total) et courbe sur 30 jours (jours en UTC) ; participants et unes enregistrées viendront avec la tâche admin V2. Le bouton « Actualiser » recharge ; pas de rafraîchissement automatique. **L'écran actuel du front (`web/`) affiche encore les votes : il sera adapté par l'autre développeur.**
 - **Sources** : ajouter un flux RSS (vérifié côté serveur, adresses publiques seulement), le désactiver (l'ingestion l'ignore, ses articles et sujets restent) ou le supprimer définitivement (avec confirmation du nombre d'articles supprimés). La base est la référence ; `feeds.yaml` ne fait qu'initialiser.
 - **Articles** : liste paginée et triable, filtres par source, sujet, dates (date de publication ; un article sans date n'apparaît pas avec un filtre de date) et « non regroupés ».
-- **Sujets** : liste triable avec état, vague et nombres d'articles, de médias et de votes ; détail d'un sujet (statut, raison de la une, votes et courbe par jour, liste de votes avec numéro de compte, articles).
-- **Limites connues** : lecture seule pour les articles, sujets, votes et statistiques (aucune modification, aucun export) ; aucune adresse e-mail n'est affichée (un vote montre le numéro de compte) ; les statistiques ne se rafraîchissent pas seules ; un sujet qui perd des articles (suppression d'une source) reste en base avec ses votes et garde son titre jusqu'au prochain regroupement ; un seul mot de passe partagé, sans journal d'audit. Détail des routes : [docs/api-contract.md](docs/api-contract.md), section Admin.
+- **Sujets** : liste triable (titre, nombre d'articles, dernière mise à jour) avec nombres d'articles et de médias ; détail d'un sujet (articles). Les approbations viendront avec la tâche admin V2.
+- **Limites connues** : lecture seule pour les articles, sujets et statistiques (aucune modification, aucun export) ; aucune adresse e-mail n'est affichée ; les statistiques ne se rafraîchissent pas seules ; un sujet qui perd des articles (suppression d'une source) reste en base avec ses sélections et garde son titre jusqu'au prochain regroupement ; un seul mot de passe partagé, sans journal d'audit. Détail des routes : [docs/api-contract.md](docs/api-contract.md), section Admin.
 
 ## Alimentation en sujets
 
 ```bash
 docker compose run --rm api python -m app.cli refresh   # ingest + cluster, une fois
-curl 'http://localhost:8000/api/topics/front?limit=5'
+curl -b cookies 'http://localhost:8000/api/admin/topics?page_size=5'   # après connexion admin (cookie cn_admin)
 ```
 
-Commandes `ingest`, `cluster`, `halve`, `refresh`, `run`, `seed-demo`, réglage du seuil de regroupement et détail des endpoints : [api/README.md](api/README.md).
+Commandes `ingest`, `cluster`, `refresh`, `run`, `seed-demo`, réglage du seuil de regroupement et détail des endpoints : [api/README.md](api/README.md).
 
-## Vote et halving
+## Une personnelle et une collective (V2)
 
-`POST /api/votes` enregistre (ou remplace) le vote d'un compte sur un sujet. Le worker recalcule ensuite, à chaque cycle, l'état des sujets (`new`, `active`, `reserve`, `emerged`) par Successive Halving ; le flux `GET /api/vote/next` et la une `GET /api/topics/front` s'en servent. Fonctionnement et exemple chiffré : [docs/halving.md](docs/halving.md). Pour voir la une bouger sans attendre de vrais votes :
-
-```bash
-docker compose run --rm -e DEMO_SEED=true api python -m app.cli seed-demo
-curl 'http://localhost:8000/api/topics/front?limit=10'
-```
+Chaque citoyen compose sa une de 10 sujets (sans ordre, poids égaux) jusqu'à 17 h ; à 17 h, le worker agrège les unes et publie une une collective figée, consultable par date (`/une/AAAA-MM-JJ`). Le schéma (`selections`, `editions`, `edition_topics`) est en place (migration 0009 : **les votes et le halving V1 ont été supprimés, sans retour possible pour les données**) ; les routes et la clôture arrivent avec les tâches suivantes. Contrat cible : [docs/api-contract.md](docs/api-contract.md).
 
 ## Comptes : connexion par lien magique
 
@@ -115,7 +110,7 @@ Pas de mot de passe : l'utilisateur saisit son e-mail, reçoit un lien à usage 
 
 1. Le front appelle `POST /api/auth/magic-link {email}` (toujours `202`, que le compte existe ou non).
 2. L'e-mail contient `{APP_BASE_URL}/connexion?token=…`. La page `/connexion` du front lit `token` et appelle `POST /api/auth/verify {token}` : `200 {email}` et cookie de session `httpOnly`, `SameSite=Lax` (`Secure` avec `COOKIE_SECURE=true`). Le compte est créé au premier lien vérifié.
-3. Ensuite `GET /api/me`, `POST /api/auth/logout`, et le rattachement des votes anonymes du navigateur : `POST /api/votes/claim`, puis `GET /api/votes/mine`.
+3. Ensuite `GET /api/me` et `POST /api/auth/logout`. (V2, à venir : un brouillon de une peut accompagner la demande de lien et être fusionné à la vérification.)
 
 Le front envoie ses requêtes avec `credentials: "include"` ; derrière le service `web` tout passe par la même origine, `CORS_ORIGINS` ne sert que pour `npm run dev` (5173).
 
@@ -151,7 +146,7 @@ docker compose run --rm --user root -v "$PWD/api:/srv/api" api \
 ## Structure
 
 ```
-docker-compose.yml        db (PostgreSQL 16) + api + worker (ingestion, regroupement et halving périodiques) + web (front nginx, pile front) + mailpit (profil `mail`)
+docker-compose.yml        db (PostgreSQL 16) + api + worker (ingestion et regroupement périodiques, clôture à 17 h à venir) + web (front nginx, pile front) + mailpit (profil `mail`)
 scripts/                  test-api.sh (tests), smoke.py (parcours de bout en bout)
 api/
   Dockerfile, pyproject.toml, alembic.ini
@@ -162,8 +157,8 @@ api/
     models/               schéma de données
     routers/              routes HTTP (préfixe /api)
     services/             logique métier (ingestion, regroupement, sujets)
-    cli.py                commandes ingest / cluster / halve / refresh / run / seed-demo
-  config/                 settings.py, halving.py/.yaml, feeds.py/.yaml, clustering.py/.yaml
+    cli.py                commandes ingest / cluster / refresh / run / seed-demo
+  config/                 settings.py, feeds.py/.yaml, clustering.py/.yaml
   tests/                  pytest (base PostgreSQL réelle)
-docs/                     brief produit, contrat HTTP, halving
+docs/                     briefs produit (V1 et V2), contrat HTTP V2
 ```

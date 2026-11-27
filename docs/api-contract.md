@@ -1,12 +1,16 @@
-# Contrat HTTP v1 — Citizen News
+# Contrat HTTP v2 — Citizen News
 
-Contrat que les tâches backend suivantes implémentent et que le front consomme.
+Contrat des routes de Citizen News V2 : chaque citoyen compose sa une de 10 sujets (poids égaux), modifiable jusqu'à 17 h ; à 17 h le serveur agrège et publie une une collective figée. Il fait foi pour le backend et le front, développés en parallèle. Produit : [citizen-news-brief-v2.md](citizen-news-brief-v2.md).
 
 - Préfixe : `/api`. Corps et réponses en JSON (`Content-Type: application/json`).
-- Authentification : cookie de session `httpOnly` posé par `POST /api/auth/verify`. Le front envoie les requêtes avec les cookies (`credentials: "include"`).
+- Authentification : cookie de session `httpOnly` (`cn_session`) posé par `POST /api/auth/verify`. Le front envoie les requêtes avec les cookies (`credentials: "include"`).
 - Erreurs : `{"detail": "<message en français>"}` avec le code HTTP adapté. `429` pour la limitation de débit (en-tête `Retry-After` en secondes).
-- Dates : ISO 8601 UTC (`2026-11-26T10:00:00Z`).
-- Seul `GET /api/health` est déjà implémenté (voir en fin de document) ; le reste est le contrat cible.
+- Dates : ISO 8601 UTC (`2026-11-27T16:00:00Z`).
+- **Heure de clôture** : 17:00 Europe/Paris (`EDITION_HOUR=17`, `EDITION_TIMEZONE=Europe/Paris`). `edition_date` est la date **locale** (`AAAA-MM-JJ`) du jour de la clôture ; c'est la clé de l'édition et son permalien (`/une/2026-11-27` côté front).
+- **Compteurs d'approbation** : jamais dans une réponse destinée à un citoyen avant la publication (ni bassin, ni `/me/une`, ni erreur). Ils apparaissent dans l'édition publiée et dans le backoffice.
+- **Remplacement net de V1** (décision de l'humain) : plus de vote, de halving, de `support`/`reason`, de `/api/topics/front`, `/api/vote/next`, `/api/votes*`, `/api/halving/config`. La migration 0009 a supprimé ces données.
+
+**État d'implémentation** — implémenté : `GET /api/health`, l'authentification (sans brouillon), le backoffice sources et articles, `GET /api/admin/topics` (+ détail) et `GET /api/admin/stats` dans leur forme réduite décrite plus bas, la `TopicCard` V2. **Cible, à venir** (tâches suivantes) : bassin, une personnelle, brouillon du lien magique, éditions publiées, clôture, aperçu et listes d'éditions admin, `approvals`/participants admin. Le schéma (`selections`, `editions`, `edition_topics`, `login_tokens.draft`) est posé.
 
 ## Types communs
 
@@ -20,11 +24,15 @@ Contrat que les tâches backend suivantes implémentent et que le front consomme
   "sources": [
     { "name": "Nom du média", "url": "https://…", "title": "Titre de l'article", "published_at": "2026-11-26T09:30:00Z" }
   ],
+  "article_count": 9,
+  "source_count": 5,
   "first_seen_at": "2026-11-25T18:00:00Z",
   "updated_at": "2026-11-26T09:30:00Z",
   "image_url": "https://cdn.example.org/photo.jpg"
 }
 ```
+
+`sources` : un média par entrée (son article le plus récent). `article_count` : tous les articles du sujet ; `source_count` : médias **distincts**. `updated_at` : dernière mise à jour du sujet (arrivée d'un article : le regroupement la recalcule à chaque rattachement, c'est la date de son article le plus récent ; test dans `test_topic_cards.py`). Plus de `support` ni de `reason`.
 
 `image_url` : `string | null`, toujours présent. URL **https** d'une image de l'article, validée à l'ingestion : schéma https (mis en minuscules), hôte fait de lettres, chiffres, points et tirets (IDN conservé en punycode) ou IP littérale publique, port valide, sans identifiants, sans espace, caractère de contrôle, antislash ni `" ' < >`, 500 caractères au plus. Les hôtes locaux ou privés sont refusés (`localhost`, `*.localhost`, IP privées, loopback, link-local, réservées ou non spécifiées, IPv4 comme IPv6) : le navigateur du lecteur ferait la requête sur son propre réseau. Valeur : l'image de l'article le plus récent du sujet (`published_at` décroissant, les dates absentes en dernier, puis `id` décroissant ; contrairement à `sources`, `fetched_at` ne sert pas de repli) qui en a une ; `null` si aucun article n'en a.
 
@@ -38,91 +46,79 @@ Pour chaque entrée de flux, premier candidat valide parmi, dans l'ordre : `medi
 
 **Réingestion** : les articles déjà en base n'ont pas d'image. Quand un article existant a `image_url` à `NULL` et que son flux en fournit maintenant une valide, le cycle d'ingestion normal la renseigne (mise à jour de cette colonne seule : ni `topic_id`, ni `published_at`, ni regroupement). Une image déjà enregistrée n'est jamais remplacée. Les articles qui ont quitté les flux restent sans image ; il n'y a pas de commande de réingestion séparée.
 
-### Soutien (`support`) et raison (`reason`)
+## Bassin de sujets
+
+### `GET /api/topics/pool?tab=random|recent|radar&seed=<chaîne>` — public
+
+`seed` : 8 à 64 caractères `[A-Za-z0-9_-]`. Sujets du jour = au moins un article dans les `POOL_WINDOW_HOURS` dernières heures (24) **et** au moins 2 médias distincts (règle de regroupement inchangée, `min_sources_for_front`). Réponse (plafond 300 items, pas de pagination) :
 
 ```json
-"support": { "level": "low|medium|high", "votes_count": 42 },
-"reason":  { "code": "common_priority|strong_mobilisation|under_the_radar|emerging", "label": "Priorité commune" }
+{ "edition_date": "2026-11-27", "closes_at": "2026-11-27T16:00:00Z", "open": true, "total": 42, "items": [ { /* TopicCard */ } ] }
 ```
 
-`label` est un libellé en français prêt à afficher.
+- `random` (défaut) : tri par `sha256(seed + ":" + topic_id)` (stable pour une même graine, différent d'une graine à l'autre, sans pondération). `seed` **obligatoire** pour `random` (`422` sinon). Le **client** garde la graine (stockage du navigateur, une par session de navigation) et la liste des sujets déjà vus : il présente d'abord les vus dans l'ordre de passage, puis les non vus dans l'ordre du serveur ; un nouveau sujet s'insère ainsi au hasard parmi les non vus.
+- `recent` : `updated_at` décroissant, puis `id` décroissant.
+- `radar` : sujets du bassin avec `source_count <= RADAR_MAX_SOURCES` (3), même ordre que `recent`. Seule la faible couverture médiatique compte.
 
-| `reason.code` | Libellé indicatif |
+Les sujets déjà dans la une de l'utilisateur restent dans la liste (le client les marque « Dans ma une »). Aucun compteur d'approbation.
+
+## Une personnelle
+
+Session citoyenne requise (`cn_session`), `401` sinon. La une est celle de l'édition en cours (`edition_date` ci-dessus). Un compte = une une par `edition_date` (unicité en base : `selections`). 10 places au plus, sans ordre ni poids, moins de 10 autorisé.
+
+Corps commun (« une ») : `{ "edition_date": "2026-11-27", "closes_at": "2026-11-27T16:00:00Z", "open": true, "topic_ids": [12, 7] }` (ordre d'ajout, sans compteur).
+
+| Route | Effet |
 |---|---|
-| `common_priority` | Priorité commune |
-| `strong_mobilisation` | Forte mobilisation |
-| `under_the_radar` | Sous les radars |
-| `emerging` | Sujet émergent |
+| `GET /api/me/une` | `200` → une |
+| `PUT /api/me/une` `{"topic_ids": [...]}` | remplace toute la une (≤ 10, dédoublonnés, sujets existants) ; plus de 10 ou sujet inconnu → `422` · `200` → une |
+| `PUT /api/me/une/topics/{id}` | ajoute un sujet (idempotent) ; une pleine → `409 "Votre une est complète"` ; sujet inconnu → `404` · `200` → une |
+| `DELETE /api/me/une/topics/{id}` | retire (idempotent) · `200` → une |
+| `POST /api/me/une/merge` `{"topic_ids": [...]}` | fusionne sans écraser : l'existant reste, les nouveaux s'ajoutent jusqu'à 10 places, sujets inconnus ou hors bassin ignorés · `200` → `{"added": 2, "ignored": 1, "une": {…}}` |
 
-### Choix de vote (`choice`)
+Toute écriture : `409 {"detail": "La clôture est passée, la une du jour n'est plus modifiable"}` si `open` est faux. `open` est faux dès l'heure de clôture, même si le worker est en retard ; il redevient vrai (pour l'édition suivante, une vide) quand l'édition du jour est publiée. Limitation de débit sur les écritures (par compte, `429`).
 
-`"more"` (il faut davantage en parler) · `"not_priority"` (ce n'est pas prioritaire) · `"unknown"` (je ne sais pas).
+## Éditions publiées
 
-## Sujets
-
-### `GET /api/topics/front?limit=10` — public
-
-La une citoyenne. `limit` : entier 1–50, défaut 10.
+Édition :
 
 ```json
-{ "items": [ { /* TopicCard */, "support": {…}, "reason": {…} } ], "has_more": true }
+{ "date": "2026-11-26", "published_at": "2026-11-26T16:00:03Z", "participants": 120,
+  "topics": [ { "rank": 1, "topic_id": 12, "title": "…", "summary": "…",
+                "sources": [ { "name": "…", "url": "…", "title": "…", "published_at": "…" } ],
+                "source_count": 5, "article_count": 9, "approvals": 80, "proportion": 0.667, "image_url": "https://…" } ] }
 ```
 
-`has_more` : vrai s'il existe des sujets classés au-delà de `limit`.
+Capture **figée** (titre, résumé, sources, nombre de médias… copiés à la clôture, ne changent plus ; `topic_id` vaut `null` si le sujet a été supprimé depuis). 0 à 10 `topics` : seuls les sujets avec ≥ 1 approbation. `proportion = approbations / participants` ; `participants` = nombre de comptes ayant enregistré une une **non vide**. Sans participants, l'édition est publiée quand même (`topics: []`, `participants: 0`).
 
-**Pagination (« Voir plus »)** : pas d'`offset` ni de curseur. Le rang dépend du temps (fraîcheur) : un offset donnerait des doublons ou des trous d'une page à l'autre. Le front redemande donc la liste complète avec un `limit` croissant (10, 20, 30… jusqu'à 50) et **remplace** la liste affichée par la réponse, sans jamais concaténer. À un instant donné, la liste `limit=N` est le préfixe de la liste `limit=N+10`.
+| Route | Réponse |
+|---|---|
+| `GET /api/edition/current` — public | `{ "edition": Édition \| null, "next_close_at": "…Z", "server_time": "…Z" }` (`null` avant la première édition) |
+| `GET /api/editions/{date}` — public | Édition · `404 {"detail": "Édition introuvable."}` (permalien stable) |
+| `GET /api/editions?limit=30` — public | `limit` 1–100 · `{ "items": [ {"date", "published_at", "participants", "topic_count"} ] }`, plus récentes d'abord |
 
-Classement : mélange du soutien citoyen et de la fraîcheur. Chaque carte a toujours un `support` et une `reason`. La v1 n'émet que les quatre raisons ci-dessus (pas d'« Alerte minoritaire »). Détail : [halving.md](halving.md).
+## Agrégation et clôture (règles)
 
-### `GET /api/vote/next?count=10&seen=1,2` — public
+**Agrégation** — une seule fonction, `aggregate(session, edition_date, now)` : score d'un sujet = nombre de comptes l'ayant dans leur une ; seuls les sujets éligibles à la clôture comptent (bassin) ; égalités départagées par `source_count` décroissant, puis `updated_at` le plus récent, puis `id` croissant (déterministe) ; les 10 premiers (score ≥ 1) forment la une ; rangs 11–20 pour l'aperçu admin. Elle rend le classement complet, les participants, les groupes d'égalité et le critère qui a départagé. La clôture **et** l'aperçu admin appellent exactement cette fonction.
 
-Prochains sujets à évaluer. `count` : entier 1–20, défaut 10. `seen` : identifiants déjà vus, séparés par des virgules (exclus du résultat). Sujets mélangés par le Successive Halving (nouveaux, repêchage, actifs), hors déjà votés si une session est présente (le cookie est facultatif). **Résultats masqués** : les éléments sont des `TopicCard` **sans** `support` ni `reason` ni aucun compteur.
-
-```json
-{ "items": [ { /* TopicCard */ } ] }
-```
-
-## Votes
-
-### `POST /api/votes` — session requise
-
-Requête : `{"topic_id": 12, "choice": "more"}`. Remplace le vote existant du compte sur ce sujet (un seul vote par compte et par sujet).
-
-- `200` → `{"topic_id": 12, "choice": "more"}`
-- `401` sans session valide · `404` sujet inconnu · `422` choix invalide · `429`
-
-### `POST /api/votes/claim` — session requise
-
-Rattache au compte les votes anonymes gardés dans le navigateur. Requête :
-
-```json
-{ "votes": [ { "topic_id": 12, "choice": "more" } ] }
-```
-
-Un vote déjà présent sur le sujet n'est pas écrasé ; les sujets inconnus sont ignorés.
-
-- `200` → `{"claimed": 3}` (nombre de votes effectivement enregistrés)
-- `401` · `422` · `429`
-
-### `GET /api/votes/mine` — session requise
-
-- `200` → `{"votes": [ {"topic_id": 12, "choice": "more"} ]}`
-- `401` sans session.
+**Clôture** — `close_due_edition(session, now)`, appelée par le worker (`python -m app.cli run`, vérification **chaque minute**, tick séparé de l'ingestion de 15 min) : au premier passage après l'heure locale de clôture, s'il n'existe pas d'édition pour `edition_date`, agrège et publie. Idempotente et atomique (une transaction ; verrou advisory ou contrainte unique sur `editions.edition_date` : deux workers simultanés → une seule édition). Rattrape un retard (worker arrêté des heures ou des jours : publie l'édition du jour dû, une seule, la plus récente due, pas d'éditions fantômes). Horloge injectable (`now`) ; tests à l'heure d'été (17:00 locale = 15:00 UTC l'été, 16:00 UTC l'hiver).
 
 ## Authentification (lien magique)
 
 ### `POST /api/auth/magic-link`
 
-Requête : `{"email": "a@example.org"}`.
+Requête : `{"email": "a@example.org", "draft": {"topic_ids": [12, 7]}}` — `draft` optionnel (≤ 10 sujets, `422` au-delà ; dédoublonné et validé côté serveur).
 
-- `202` **toujours** (corps `{}`), que le compte existe ou non, sans révéler l'un ou l'autre. Un compte est créé à la vérification du premier lien.
+Le serveur garde le brouillon **avec le jeton** (jamais dans l'URL ; supprimé quand le jeton est consommé ou purgé : colonne `login_tokens.draft`).
+
+- `202` **toujours** (identique avec ou sans brouillon) (corps `{}`), que le compte existe ou non, sans révéler l'un ou l'autre. Un compte est créé à la vérification du premier lien.
 - `422` e-mail mal formé · `429` limitation de débit.
 
 ### `POST /api/auth/verify`
 
 Requête : `{"token": "…"}` (jeton à usage unique, durée de vie limitée).
 
-- `200` → `{"email": "a@example.org"}` et en-tête `Set-Cookie` de session `httpOnly` (`SameSite=Lax`, `Secure` hors développement).
+- `200` → `{"email": "a@example.org", "draft": {"added": 2, "ignored": 1} | null}` : si l'édition est ouverte et qu'un brouillon est attaché, il est fusionné (règle de `/api/me/une/merge`) dans la une du compte, même si le navigateur est différent ; édition fermée → brouillon ignoré, `draft: null`. En-tête `Set-Cookie` de session `httpOnly` (`SameSite=Lax`, `Secure` hors développement).
 - `400` jeton invalide, expiré ou déjà utilisé · `429`.
 
 ### `POST /api/auth/logout`
@@ -195,33 +191,34 @@ Ré-ajouter l'URL d'une source supprimée définitivement est permis ; elle quit
 - la même garde protège l'ingestion périodique de chaque source (celles de `feeds.yaml` comprises), pas seulement l'ajout ;
 - limite : la résolution DNS (`getaddrinfo`) n'a pas de délai propre, le délai de 10 s n'est vérifié qu'entre les étapes.
 
-**Suppression** : les articles partent en cascade, l'URL est mémorisée dans `deleted_sources` pour que l'initialisation depuis `feeds.yaml` ne recrée pas la source. Un sujet qui perd des articles n'est pas supprimé (ses votes sont conservés) : s'il lui reste moins de médias distincts que le minimum pour la une, ou plus aucun article, il n'apparaît plus sur la une ni dans le flux de vote ; son titre et son résumé ne changent qu'au prochain regroupement qui lui rattache un article : un sujet mixte garde donc, après la suppression, un titre calculé avec l'ancien article.
+**Suppression** : les articles partent en cascade, l'URL est mémorisée dans `deleted_sources` pour que l'initialisation depuis `feeds.yaml` ne recrée pas la source. Un sujet qui perd des articles n'est pas supprimé (ses sélections et ses éditions publiées sont conservées) : s'il lui reste moins de médias distincts que le minimum pour le bassin, ou plus aucun article, il n'en fait plus partie ; son titre et son résumé ne changent qu'au prochain regroupement qui lui rattache un article : un sujet mixte garde donc, après la suppression, un titre calculé avec l'ancien article.
 
 ### Statistiques (`GET /api/admin/stats`)
 
-Page d'accueil du backoffice. Derrière la session admin (`401` sinon, y compris avec une session citoyenne). **Comptes agrégés uniquement** : ni identifiant de compte, ni adresse. Réponse :
+Page d'accueil du backoffice. Derrière la session admin (`401` sinon, y compris avec une session citoyenne). **Comptes agrégés uniquement** : ni identifiant de compte, ni adresse. Réponse **actuelle** (articles seulement) :
 
 ```json
 {
-  "last_24h": {"articles": 12, "votes": 40, "voters": 9},
-  "total":    {"articles": 1830, "votes": 5120, "voters": 410},
-  "series": [{"date": "2026-10-29", "articles": 7, "votes": 31, "voters": 8}, …]
+  "last_24h": {"articles": 12},
+  "total":    {"articles": 1830},
+  "series": [{"date": "2026-10-29", "articles": 7}, …]
 }
 ```
 
+**Cible V2** (tâche admin à venir) : `participants` et `unes` (unes enregistrées) s'ajoutent à `last_24h`, `total` et à chaque point de `series`, à la place des votes et votants V1.
+
 - **Fenêtre « 24 h »** : glissante, `[maintenant − 24 h, maintenant]` (bornes incluses), horloge du serveur (injectable dans les tests).
-- **Articles** : comptés selon la date d'**ingestion** (`articles.fetched_at`, posée à l'insertion, jamais modifiée), pas la date de publication. **Votes** : date de création du vote (`votes.created_at`) ; un vote modifié plus tard garde sa date. **Votants** : comptes distincts (`count(distinct account_id)`), sur 24 h et au total.
-- **`series`** : exactement 30 entrées, un jour UTC chacune, de J−29 à aujourd'hui **compris** (aujourd'hui est une journée UTC partielle), ordre croissant, jours vides à `0`. Même convention de jours que la courbe de votes d'un sujet (`date_trunc('day')` en UTC). Les éléments plus anciens ne figurent pas dans la série mais sont comptés dans `total`.
-- **`voters` par jour n'est pas cumulable** : c'est le nombre de comptes distincts ayant voté ce jour-là. Un compte qui vote lundi et mardi compte pour 1 chaque jour ; la somme des jours dépasse `total.voters`. Un compte qui vote sur plusieurs sujets le même jour compte pour 1 votant et n votes.
-- Calculé en base par 4 requêtes agrégées (nombre constant, quel que soit le volume) ; index `ix_articles_fetched_at` et `ix_votes_created_at` (migration 0008).
+- **Articles** : comptés selon la date d'**ingestion** (`articles.fetched_at`, posée à l'insertion, jamais modifiée), pas la date de publication.
+- **`series`** : exactement 30 entrées, un jour UTC chacune, de J−29 à aujourd'hui **compris** (aujourd'hui est une journée UTC partielle), ordre croissant, jours vides à `0`. Les éléments plus anciens ne figurent pas dans la série mais sont comptés dans `total`.
+- Calculé en base par des requêtes agrégées (nombre constant, quel que soit le volume) ; index `ix_articles_fetched_at` (migration 0008).
 
-### Articles, sujets et votes (lecture seule)
+### Articles et sujets (lecture seule)
 
-Routes sous `/api/admin`, toutes derrière la session admin (`401` sinon, y compris avec une session citoyenne). **Aucune réponse ne contient d'adresse e-mail, de hash ni de donnée personnelle** : un vote est `{date, choix, numéro de compte}`, le numéro étant l'`id` du compte (un test parcourt les réponses et échoue si une adresse y apparaît).
+Routes sous `/api/admin`, toutes derrière la session admin (`401` sinon, y compris avec une session citoyenne). **Aucune réponse ne contient d'adresse e-mail, de hash ni de donnée personnelle** (un test parcourt les réponses et échoue si une adresse y apparaît).
 
-**Pagination** (`/articles`, `/topics`, `/topics/{id}/votes`) : `page` (≥ 1, 100 000 au plus, défaut 1) et `page_size` (1 à 200, défaut 50) ; hors bornes → `422`. Réponse `{"items": […], "total": <n>, "page": <p>, "page_size": <s>}`. Une page au-delà de la dernière répond `200` avec `items: []` et le vrai `total`. Pagination et tri sont faits par le serveur (`LIMIT/OFFSET` + un `COUNT`), jamais en mémoire. Tout paramètre invalide → `422 {"detail": "Requête invalide (champ : …)"}` (ou un message précis pour les dates).
+**Pagination** (`/articles`, `/topics`) : `page` (≥ 1, 100 000 au plus, défaut 1) et `page_size` (1 à 200, défaut 50) ; hors bornes → `422`. Réponse `{"items": […], "total": <n>, "page": <p>, "page_size": <s>}`. Une page au-delà de la dernière répond `200` avec `items: []` et le vrai `total`. Pagination et tri sont faits par le serveur (`LIMIT/OFFSET` + un `COUNT`), jamais en mémoire. Tout paramètre invalide → `422 {"detail": "Requête invalide (champ : …)"}` (ou un message précis pour les dates).
 
-**Tri** : `sort` et `order` (`asc`/`desc`) sont des listes blanches strictes (`422` sinon) ; l'`ORDER BY` vient d'une table fermée du serveur, jamais de l'entrée. Ordre total : l'`id` départage les égalités (même sens que `order`) ; les valeurs absentes (article sans date, sujet sans changement d'état, article non regroupé) viennent **toujours en dernier**, dans les deux sens.
+**Tri** : `sort` et `order` (`asc`/`desc`) sont des listes blanches strictes (`422` sinon) ; l'`ORDER BY` vient d'une table fermée du serveur, jamais de l'entrée. Ordre total : l'`id` départage les égalités (même sens que `order`) ; les valeurs absentes (article sans date, article non regroupé) viennent **toujours en dernier**, dans les deux sens.
 
 #### `GET /api/admin/articles`
 
@@ -244,14 +241,13 @@ Les filtres se combinent (ET). Item :
 
 #### `GET /api/admin/topics`
 
-Paramètres : `page`, `page_size`, `sort` = `votes` (défaut) | `title` | `state` (ordre du cycle de vie : new, active, emerged, reserve) | `articles` | `state_changed` ; `order` (défaut `desc`) ; filtre `state` = `new` | `active` | `reserve` | `emerged`. Item :
+Paramètres : `page`, `page_size`, `sort` = `updated` (défaut, `updated_at`) | `title` | `articles` ; `order` (défaut `desc`). Item :
 
 ```json
-{ "id": 7, "title": "Retraites", "state": "active", "wave": 1, "state_changed_at": "2026-11-20T09:30:00Z",
-  "article_count": 5, "source_count": 3, "vote_count": 41, "image_url": "https://…" }
+{ "id": 7, "title": "Retraites", "updated_at": "2026-11-26T09:30:00Z", "article_count": 5, "source_count": 3, "image_url": "https://…" }
 ```
 
-`source_count` : médias distincts. `image_url` : image du plus récent article qui en a une (comme les cartes citoyennes), ou `null`. Agrégats calculés par le SQL de la page (deux requêtes avec le `COUNT`).
+`source_count` : médias distincts. `image_url` : image du plus récent article qui en a une (comme les cartes citoyennes), ou `null`. Agrégats calculés par le SQL de la page (deux requêtes avec le `COUNT`). Plus de `state`, `wave`, `vote_count` ni de filtre `state` (V1). **Cible V2** : un champ `approvals` (approbations de l'édition en cours) s'ajoute avec la tâche admin.
 
 #### `GET /api/admin/topics/{id}`
 
@@ -259,54 +255,26 @@ Paramètres : `page`, `page_size`, `sort` = `votes` (défaut) | `title` | `state
 
 ```json
 {
-  "id": 7, "title": "…", "summary": "…", "state": "emerged", "wave": 3,
-  "first_seen_at": "…", "updated_at": "…", "state_changed_at": "…|null", "evaluated_at": "…|null",
+  "id": 7, "title": "…", "summary": "…",
+  "first_seen_at": "…", "updated_at": "…",
   "article_count": 5, "source_count": 3,
-  "support": { "score": 0.61, "level": "high", "votes_count": 40 },
-  "front": { "on_front": true, "reason": { "code": "strong_mobilisation", "label": "Forte mobilisation" } },
-  "votes": { "more": 30, "not_priority": 6, "unknown": 4, "total": 40, "voters": 40, "first_vote_at": "…|null",
-             "daily": [ { "date": "2026-11-24", "more": 10, "not_priority": 2, "unknown": 0, "total": 12 } ] },
   "articles": [ { "id": 1, "title": "…", "url": "…", "source": { "id": 3, "name": "…", "active": true }, "published_at": "…|null" } ],
   "articles_truncated": false
 }
 ```
 
-- **Historique** : le modèle ne garde **que le dernier changement d'état** (`state_changed_at`) et la dernière évaluation de vague (`evaluated_at`) ; il n'y a pas d'historique des états, et l'API n'en invente pas.
-- **Soutien** : `score` = borne basse de Wilson de la part de « more » parmi les opinions (`more` + `not_priority`), `level` = `low`/`medium`/`high` : les fonctions de `services/support.py` et `halving.py`, pas une copie. `votes_count` compte aussi « unknown ».
-- **À la une** : `front.on_front` vaut `true` quand le sujet **remplit les conditions pour figurer sur la une** (même fonction `front_entry` que la page d'accueil : fenêtre d'activité, hors réserve, nombre de médias, votes ou fraîcheur, raison), **sans tenir compte du nombre d'emplacements affichés** (`limit`). `reason` est alors la raison affichée aux citoyens ; `null` (et `on_front: false`) sinon, même si les votes mériteraient une raison.
-- **Votes** : totaux par choix, `voters` = comptes distincts. `daily` : votes **par jour UTC** (`date_trunc('day')` en UTC, agrégé en SQL), une entrée par jour, séries `more`/`not_priority`/`unknown` et `total`, sur les **30 derniers jours** (aujourd'hui compris) ou **depuis le jour du premier vote** si c'est plus court ; les jours sans vote valent 0 ; `[]` sans aucun vote. Les totaux, eux, portent sur tous les votes.
 - **Articles** : du plus récent au plus ancien (`published_at`, sans date en dernier, puis `id`), 200 au plus ; `articles_truncated` signale la coupe (`article_count` reste le vrai nombre).
+- **Cible V2** : `approvals` courant et historique par édition s'ajoutent avec la tâche admin.
 
-#### `GET /api/admin/topics/{id}/votes`
+### Éditions (cible V2, tâche admin à venir)
 
-`page`, `page_size`. `404` si le sujet est inconnu. Trié par date décroissante (puis `id` du vote décroissant : ordre stable). Item : `{"date": "2026-11-26T10:00:00Z", "choice": "more|not_priority|unknown", "account_id": 42}`.
+| Route | Réponse |
+|---|---|
+| `GET /api/admin/edition/preview` | `{ "computed_at", "edition_date", "participants", "topics": [ItemAdmin ×≤10], "next": [ItemAdmin rangs 11–20], "ties": [{"approvals": 12, "topic_ids": [3, 9], "broken_by": "source_count\|updated_at\|id", "crosses_cut": true}] }`. Ne publie rien, ne fige rien, n'écrit rien (appelle `aggregate`). |
+| `GET /api/admin/editions` | liste `{date, published_at, participants, topic_count}` |
+| `GET /api/admin/editions/{date}` | édition avec approbations |
 
-## Halving
-
-### `GET /api/halving/config` — public
-
-Paramètres actifs du Successive Halving et leur description (page de transparence).
-
-```json
-{
-  "params": {
-    "min_votes_first_decision": 20,
-    "keep_ratio": 0.5,
-    "waves": 3,
-    "new_topic_traffic_share": 0.3,
-    "rescue_share": 0.1
-  },
-  "description": {
-    "min_votes_first_decision": "Nombre minimal de votes avant la première décision.",
-    "keep_ratio": "Proportion de sujets conservés à chaque vague.",
-    "waves": "Nombre de vagues de sélection.",
-    "new_topic_traffic_share": "Part du trafic de vote réservée aux nouveaux sujets.",
-    "rescue_share": "Part du trafic de vote réservée au repêchage de sujets en réserve."
-  }
-}
-```
-
-`description` contient une clé par paramètre de `params`, avec un texte en français (les textes ci-dessus sont des exemples ; ceux de l'API sont plus détaillés).
+`ItemAdmin` : `{ "rank", "topic_id", "title", "approvals", "proportion", "source_count", "article_count", "updated_at", "tied_with": [ids], "broken_by": null | "source_count" | "updated_at" | "id" }`. Jamais d'e-mail dans les réponses admin.
 
 ## Santé (implémenté)
 

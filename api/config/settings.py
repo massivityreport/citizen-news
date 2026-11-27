@@ -42,11 +42,7 @@ class Settings(BaseSettings):
     rate_limit_magic_link_per_email: int = 5
     rate_limit_magic_link_per_ip: int = 20
     rate_limit_verify_per_ip: int = 30
-    rate_limit_claim_per_account: int = 30
-    # Direct votes: per account, over their own (short) window.
-    rate_limit_vote_per_account: int = 120
-    rate_limit_vote_window_seconds: int = 60
-    # Allows `python -m app.cli seed-demo` (fictional topics, accounts and votes). Development only: refused with COOKIE_SECURE=true.
+    # Allows `python -m app.cli seed-demo` (fictional media and topics). Development only: refused with COOKIE_SECURE=true.
     demo_seed: bool = False
     # Back office: one shared password (no accounts). SecretStr keeps it out of reprs and logs.
     admin_password: SecretStr = Field(SecretStr(DEFAULT_ADMIN_PASSWORD), min_length=1)
@@ -56,9 +52,6 @@ class Settings(BaseSettings):
     rate_limit_admin_login_window_seconds: int = 900
     # Take the client IP from X-Forwarded-For (last entry, added by the reverse proxy). Only behind a proxy.
     trust_proxy: bool = False
-
-    # Maximum number of votes accepted by one POST /api/votes/claim.
-    claim_max_votes: int = Field(200, ge=1, le=1000)  # 1000 = hard bound on the parsed payload
 
     @field_validator("cors_origins", mode="before")
     @classmethod
