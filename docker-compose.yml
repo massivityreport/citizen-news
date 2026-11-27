@@ -77,7 +77,10 @@ services:
       api:
         condition: service_healthy
 
-  # Periodic ingestion + clustering. Starts once the API is healthy, i.e. once migrations are applied.
+  # Worker : ingestion + regroupement toutes les INGEST_INTERVAL_MINUTES, ET clôture de l'édition (vérifiée chaque
+  # minute : c'est lui qui publie la une collective à EDITION_HOUR). Il doit voir les MÊMES réglages d'édition et de
+  # bassin que l'API : le bassin au moment de la clôture est celui que les citoyens ont vu.
+  # Démarre une fois l'API saine, c'est-à-dire une fois les migrations appliquées.
   worker:
     build:
       context: ./api
@@ -85,6 +88,10 @@ services:
     command: ["python", "-m", "app.cli", "run", "--interval-minutes", "${INGEST_INTERVAL_MINUTES:-15}"]
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-citizen}:${POSTGRES_PASSWORD:-citizen_dev_only}@db:5432/${POSTGRES_DB:-citizen_news}
+      EDITION_HOUR: ${EDITION_HOUR:-17}
+      EDITION_TIMEZONE: ${EDITION_TIMEZONE:-Europe/Paris}
+      POOL_WINDOW_HOURS: ${POOL_WINDOW_HOURS:-24}
+      RADAR_MAX_SOURCES: ${RADAR_MAX_SOURCES:-3}
     depends_on:
       api:
         condition: service_healthy

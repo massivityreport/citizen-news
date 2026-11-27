@@ -101,7 +101,8 @@ def purge_demo(session: Session) -> None:
     session.execute(delete(Edition).where(Edition.id.in_(demo_editions)))  # edition_topics cascade
     session.execute(delete(Topic).where(Topic.title.like(f"{TITLE_PREFIX}%")))
     session.execute(delete(MediaSource).where(MediaSource.feed_url.like(f"https://{DEMO_DOMAIN}/%")))  # articles cascade
-    session.execute(delete(Account).where(Account.email.like(f"%@{EMAIL_DOMAIN}")))  # selections, sessions cascade
+    for domain in (EMAIL_DOMAIN, DEMO_DOMAIN):  # the second one: accounts of the V1 seed
+        session.execute(delete(Account).where(Account.email.like(f"%@{domain}")))  # selections, sessions cascade
     session.flush()
 
 
