@@ -74,6 +74,13 @@ class TopicIds(BaseModel):
         return value
 
 
+def normalize_email(value: str) -> str:
+    email = value.strip().lower()
+    if len(email) > 254 or not _EMAIL_RE.match(email):
+        raise ValueError("adresse e-mail invalide")
+    return email
+
+
 class MagicLinkRequest(BaseModel):
     email: str
     draft: TopicIds | None = None  # the une typed before logging in; merged by /auth/verify
@@ -81,10 +88,42 @@ class MagicLinkRequest(BaseModel):
     @field_validator("email")
     @classmethod
     def _normalize(cls, value: str) -> str:
-        email = value.strip().lower()
-        if len(email) > 254 or not _EMAIL_RE.match(email):
-            raise ValueError("adresse e-mail invalide")
-        return email
+        return normalize_email(value)
+
+
+FEEDBACK_MAX_LENGTH = 2000
+
+
+class FeedbackRequest(BaseModel):
+    """An opinion typed on the site. `email` is only read for visitors without a session."""
+
+    kind: Literal["problem", "idea", "other"]
+    message: str = Field(max_length=FEEDBACK_MAX_LENGTH * 2)  # raw cap protects the parser; the real one applies after strip
+    email: str | None = Field(None, max_length=400)
+    page_name: str = Field(max_length=200)
+    page_url: str = Field(max_length=500)
+    screen: str = Field(pattern=r"^\d{1,4}x\d{1,4}$")
+
+    @field_validator("message")
+    @classmethod
+    def _message(cls, value: str) -> str:
+        value = value.strip()
+        if not value or len(value) > FEEDBACK_MAX_LENGTH:
+            raise ValueError("message invalide")
+        return value
+
+    @field_validator("page_name", "page_url")
+    @classmethod
+    def _no_control_chars(cls, value: str) -> str:
+        value = value.strip()
+        if not value or any(ord(c) < 32 or ord(c) == 127 for c in value):
+            raise ValueError("valeur invalide")
+        return value
+
+    @field_validator("email")
+    @classmethod
+    def _email(cls, value: str | None) -> str | None:
+        return None if value is None else normalize_email(value)
 
 
 class VerifyRequest(BaseModel):

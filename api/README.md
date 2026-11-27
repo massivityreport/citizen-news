@@ -117,6 +117,8 @@ GET /api/me · POST /api/auth/logout   (cookie requis)
 | `POST /api/auth/magic-link` | IP | `RATE_LIMIT_MAGIC_LINK_PER_IP` (20) |
 | `POST /api/auth/magic-link` | e-mail normalisé (haché en mémoire) | `RATE_LIMIT_MAGIC_LINK_PER_EMAIL` (5) |
 | `POST /api/auth/verify` | IP | `RATE_LIMIT_VERIFY_PER_IP` (30) |
+| `POST /api/feedback` | IP | `RATE_LIMIT_FEEDBACK_PER_IP` (10) |
+| `POST /api/feedback` | e-mail (celui de la session si connecté) | `RATE_LIMIT_FEEDBACK_PER_EMAIL` (5) |
 
 Fenêtre : `RATE_LIMIT_WINDOW_SECONDS` (3600). Les écritures de la une (`PUT`/`DELETE`/`merge` sur `/api/me/une*`) ont leur limite par compte : `RATE_LIMIT_UNE_WRITES_PER_ACCOUNT` (60) par `RATE_LIMIT_UNE_WINDOW_SECONDS` (60) ; la lecture n'est pas limitée. Réglages d'édition : `EDITION_HOUR` (17), `EDITION_TIMEZONE` (Europe/Paris), `POOL_WINDOW_HOURS` (24), `RADAR_MAX_SOURCES` (3). Ces variables sont transmises à l'API par le compose.
 

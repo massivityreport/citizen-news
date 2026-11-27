@@ -179,3 +179,22 @@ class AdminSession(Base):
     token_hash: Mapped[str] = mapped_column(String(64), unique=True)
     created_at: Mapped[datetime] = _now()
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class Feedback(Base):
+    """Opinion sent from the public site. `email` is the session's address when logged in, else the typed one.
+    `recent_actions` is reserved for the recent-journey ticket (JSON list of actions, NULL until then)."""
+
+    __tablename__ = "feedback"
+    __table_args__ = (CheckConstraint("kind IN ('problem', 'idea', 'other')", name="kind"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    created_at: Mapped[datetime] = _now()
+    email: Mapped[str] = mapped_column(String(320))
+    kind: Mapped[str] = mapped_column(String(10))
+    message: Mapped[str] = mapped_column(Text)
+    page_name: Mapped[str] = mapped_column(String(200))
+    page_url: Mapped[str] = mapped_column(String(500))
+    screen: Mapped[str] = mapped_column(String(20))
+    browser: Mapped[str] = mapped_column(String(300))
+    recent_actions: Mapped[list | None] = mapped_column(JSON)

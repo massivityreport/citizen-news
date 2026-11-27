@@ -142,6 +142,14 @@ Requête : `{"token": "…"}` (jeton à usage unique, durée de vie limitée).
 - `200` → `{"email": "a@example.org"}`
 - `401` sans session.
 
+## Avis (`POST /api/feedback`) — public
+
+Requête : `{"kind": "problem"|"idea"|"other", "message": "…", "email": "a@example.org", "page_name": "Accueil", "page_url": "/une/2026-11-26", "screen": "390x844"}`.
+
+- `message` : 1 à 2000 caractères après suppression des espaces de bord. `page_name` ≤ 200, `page_url` ≤ 500 (sans caractère de contrôle), `screen` = `LxH` (4 chiffres au plus chacun). Le navigateur est l'en-tête `User-Agent` (tronqué à 300).
+- **E-mail** : avec une session, l'adresse du compte est utilisée et le champ `email` du client est **ignoré** ; sans session, `email` est obligatoire et son format vérifié (`422` sinon).
+- `201 {}` si enregistré (table `feedback`, colonne `recent_actions` JSON nullable réservée au parcours récent, jamais renseignée ici) · `422` requête invalide · `429` + `Retry-After` au-delà de `RATE_LIMIT_FEEDBACK_PER_EMAIL` (5) par adresse et `RATE_LIMIT_FEEDBACK_PER_IP` (10) par IP, sur `RATE_LIMIT_WINDOW_SECONDS`. Les requêtes invalides ne consomment pas le quota.
+
 ## Admin
 
 Backoffice derrière un mot de passe unique (`ADMIN_PASSWORD`), sans comptes ni rôles. Toutes les routes `/api/admin/*` répondent avec `Cache-Control: no-store` et `X-Robots-Tag: noindex`. Les messages d'erreur sont `{"detail": "<message en français>"}`.

@@ -7,6 +7,7 @@ from app.models.entities import (
     DeletedSource,
     Edition,
     EditionTopic,
+    Feedback,
     LoginToken,
     MediaSource,
     Selection,
@@ -14,6 +15,6 @@ from app.models.entities import (
 )
 
 __all__ = [
-    "Base", "Account", "AdminSession", "AuthSession", "Article", "DeletedSource", "Edition", "EditionTopic",
+    "Base", "Account", "AdminSession", "AuthSession", "Article", "DeletedSource", "Edition", "EditionTopic", "Feedback",
     "LoginToken", "MediaSource", "Selection", "Topic",
 ]
