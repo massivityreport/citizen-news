@@ -214,3 +214,50 @@ def test_own_client_ignores_proxy_environment_and_does_not_follow_redirects(monk
     monkeypatch.setattr(module.httpx, "Client", Spy)
     assert fetch_public("https://news.example/rss", resolver=DNS) == b"ok"
     assert seen["trust_env"] is False and seen["follow_redirects"] is False
+
+
+# --- IPv6 forms that wrap an IPv4 address (a translator turns them back into it) ---
+
+WRAPPED = [
+    "64:ff9b::7f00:1",  # NAT64 -> 127.0.0.1
+    "64:ff9b::a9fe:a9fe",  # NAT64 -> 169.254.169.254
+    "64:ff9b::a00:1",  # NAT64 -> 10.0.0.1
+    "64:ff9b:1::1",  # NAT64 local-use prefix
+    "::127.0.0.1",  # IPv4-compatible
+    "::10.0.0.1",
+    "::ffff:0:127.0.0.1",  # SIIT
+    "::ffff:0:a9fe:a9fe",
+    "2002:7f00:1::1",  # 6to4 -> 127.0.0.1
+    "2002:a9fe:a9fe::1",
+    "fec0::1",  # site-local
+    "192.0.0.9",
+    "192.0.0.170",
+]
+
+
+@pytest.mark.parametrize("ip", WRAPPED)
+def test_wrapped_and_special_addresses_are_refused_as_literals(ip):
+    host = f"[{ip}]" if ":" in ip else ip
+    assert refused(f"http://{host}/rss").requests == []
+
+
+@pytest.mark.parametrize("ip", WRAPPED)
+def test_wrapped_and_special_addresses_are_refused_when_dns_returns_them(ip):
+    assert refused("https://sneaky.example/rss", resolver=resolver_for({"sneaky.example": [ip]})).requests == []
+    assert refused("https://sneaky.example/rss", resolver=resolver_for({"sneaky.example": [PUBLIC, ip]})).requests == []
+
+
+def test_nat64_of_a_public_address_stays_allowed():
+    from app.services.images import is_public_ip
+    import ipaddress
+
+    assert is_public_ip(ipaddress.ip_address("64:ff9b::5db8:d822"))  # 93.184.216.34
+    assert is_public_ip(ipaddress.ip_address("2606:4700::1111"))
+    assert not is_public_ip(ipaddress.ip_address("64:ff9b::7f00:1"))
+
+
+@pytest.mark.parametrize("ip", ["64:ff9b::7f00:1", "::ffff:0:127.0.0.1", "fec0::1", "2002:7f00:1::1"])
+def test_image_urls_refuse_them_too(ip):
+    from app.services.images import validate_image_url
+
+    assert validate_image_url(f"https://[{ip}]/a.jpg") is None
