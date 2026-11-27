@@ -101,3 +101,10 @@ export function useAdminTopicVotes(id: number, params: Record<string, string>) {
     placeholderData: keepPreviousData,
   });
 }
+
+export const adminStatsKey = ["admin", "stats"] as const;
+
+/** Statistiques de l’accueil : fraîches 1 minute, jamais de rafraîchissement automatique (bouton « Actualiser »). */
+export function useAdminStats() {
+  return useQuery({ queryKey: adminStatsKey, queryFn: api.adminStats, staleTime: 60_000, refetchOnWindowFocus: false });
+}

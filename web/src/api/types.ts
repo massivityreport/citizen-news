@@ -105,6 +105,19 @@ export interface AdminTopicRow {
   image_url: string | null;
 }
 
+export interface AdminStatsCounts {
+  articles: number;
+  votes: number;
+  voters: number;
+}
+
+export interface AdminStats {
+  last_24h: AdminStatsCounts;
+  total: AdminStatsCounts;
+  /** 30 jours UTC, aujourd’hui compris, un point par jour. `voters` : distincts par jour, non cumulables. */
+  series: { date: string; articles: number; votes: number; voters: number }[];
+}
+
 export interface AdminVoteDay {
   date: string;
   more: number;
