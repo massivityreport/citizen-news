@@ -1,5 +1,6 @@
 """Test data builders."""
 
+import itertools
 import re
 from datetime import UTC, datetime, timedelta
 
@@ -84,3 +85,23 @@ def original_url(request) -> str:
     """The URL the code asked for. safe_fetch connects to the validated IP, so `request.url` holds that IP
     and the real host name is in the Host header."""
     return f"{request.url.scheme}://{request.headers['host']}{request.url.raw_path.decode()}"
+
+
+_account_numbers = itertools.count()
+
+
+def make_accounts(session, n: int) -> list[int]:
+    from app.models.entities import Account
+
+    accounts = [Account(email=f"user{next(_account_numbers)}@example.org") for _ in range(n)]
+    session.add_all(accounts)
+    session.flush()
+    return [a.id for a in accounts]
+
+
+def put_une(session, account_id: int, day, topic_ids) -> None:
+    """Record a une directly in the table (the closing reads `selections`)."""
+    from app.models.entities import Selection
+
+    session.add_all(Selection(account_id=account_id, edition_date=day, topic_id=t) for t in topic_ids)
+    session.flush()

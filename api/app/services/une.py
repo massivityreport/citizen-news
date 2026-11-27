@@ -9,12 +9,13 @@ open/closed check and the count are made on the state the write really sees. Uni
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from app.models.entities import MAX_UNE_TOPICS, Account, Selection, Topic
 from app.services.edition_calendar import EditionState, edition_state
+from app.services.edition_close import LOCK_KEY
 from app.services.pool import eligible_pool
 
 
@@ -87,9 +88,16 @@ def _topic_ids(session: Session, account_id: int, state: EditionState) -> list[i
 
 
 def _begin_write(session: Session, account_id: int, now: datetime) -> tuple[EditionState, list[int]]:
-    """Lock the account, then read the edition state and the current une. Raises UneClosed."""
-    session.scalar(select(Account.id).where(Account.id == account_id).with_for_update())
+    """Take the closing lock (shared), read the edition state, lock the account, read the une. Raises UneClosed.
+
+    The shared advisory lock is the same key the closing takes exclusively: a write in flight makes the closing wait for
+    its commit (its une is counted), and a write that starts during the closing waits, then sees the edition published
+    (tomorrow, open) and writes on tomorrow. Fixed order everywhere: advisory lock, then account row. Held until
+    commit/rollback of this short transaction only (no slow call under it).
+    """
+    session.execute(select(func.pg_advisory_xact_lock_shared(LOCK_KEY)))
     state = edition_state(session, now)
+    session.scalar(select(Account.id).where(Account.id == account_id).with_for_update())
     if not state.open:
         session.rollback()
         raise UneClosed()

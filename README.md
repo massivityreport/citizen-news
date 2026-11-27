@@ -44,7 +44,7 @@ python3 scripts/smoke.py --mailpit http://localhost:8025   # (pile backend seule
 - `APP_BASE_URL` vaut `http://localhost:8080` par défaut : le lien magique pointe sur le front. Sans mailpit (`MAIL_BACKEND=console`), passez `--logs` à `smoke.py` au lieu de `--mailpit` : il lit le lien dans `docker compose logs api`.
 - Le navigateur n'appelle que `http://localhost:8080` : nginx proxifie `/api/` vers `api:8000`, donc même origine, pas de CORS ni de souci de cookie (`CORS_ORIGINS` reste configuré pour `npm run dev`, port 5173). `TRUST_PROXY` vaut `true` par défaut dans le compose : l'API lit l'IP cliente dans `X-Forwarded-For` posé par nginx, sinon toutes les limites par IP verraient l'adresse de nginx. Si vous atteignez l'API directement sur le port 8000, un client peut forger cet en-tête : c'est pourquoi le port 8000 n'est publié que sur `127.0.0.1` (`API_BIND`, à ne changer que derrière un pare-feu ou si `TRUST_PROXY=false`).
 - `scripts/smoke.py [--base URL] (--mailpit URL | --logs)` : crée un compte jetable `smoke-<horodatage>@example.org` et vérifie le front (`/`, repli SPA, `Referrer-Policy`), le lien magique (usage unique, cookie `httpOnly` `SameSite=Lax`), la déconnexion. **Il vérifie encore des routes V1 supprimées (`topics/front`, `vote/next`, `halving/config`, votes) : il échoue tant que la dernière tâche V2 ne l'a pas réécrit.** Code de sortie 1 et ligne `ÉCART : …` au premier écart. Il consomme un lien magique et quelques requêtes sur les limites de débit : pas plus de quelques lancements par heure. `--api-only` (avec `--base http://localhost:8000`) le lance contre l'API seule, sans vérifier le front ; sans cette option il exige le HTML du front.
-- La une collective sera publiée par le worker à 17 h (Europe/Paris) : tâches V2 suivantes.
+- La une collective est publiée par le worker à 17 h (Europe/Paris), vérifiée chaque minute ; `docker compose exec worker python -m app.cli close-edition --dry-run` affiche le classement sans publier.
 - Tests de l'API : `scripts/test-api.sh` (voir « Tests »). Arrêt : `docker compose --profile mail down` (`-v` pour supprimer aussi la base).
 
 ### Limites connues
@@ -102,7 +102,7 @@ Commandes `ingest`, `cluster`, `refresh`, `run`, `seed-demo`, réglage du seuil 
 
 ## Une personnelle et une collective (V2)
 
-Chaque citoyen compose sa une de 10 sujets (sans ordre, poids égaux) jusqu'à 17 h ; à 17 h, le worker agrège les unes et publie une une collective figée, consultable par date (`/une/AAAA-MM-JJ`). Le schéma (`selections`, `editions`, `edition_topics`) est en place (migration 0009 : **les votes et le halving V1 ont été supprimés, sans retour possible pour les données**) ; les routes et la clôture arrivent avec les tâches suivantes. Contrat cible : [docs/api-contract.md](docs/api-contract.md).
+Chaque citoyen compose sa une de 10 sujets (sans ordre, poids égaux) jusqu'à 17 h ; à 17 h, le worker agrège les unes et publie une une collective figée, consultable par date (`/une/AAAA-MM-JJ`). Le schéma (`selections`, `editions`, `edition_topics`) est en place (migration 0009 : **les votes et le halving V1 ont été supprimés, sans retour possible pour les données**) ; la clôture (worker), les routes des éditions publiées et l'agrégation sont en place ; l'aperçu et les listes admin arrivent avec la tâche suivante. Contrat cible : [docs/api-contract.md](docs/api-contract.md).
 
 ## Comptes : connexion par lien magique
 
@@ -146,7 +146,7 @@ docker compose run --rm --user root -v "$PWD/api:/srv/api" api \
 ## Structure
 
 ```
-docker-compose.yml        db (PostgreSQL 16) + api + worker (ingestion et regroupement périodiques, clôture à 17 h à venir) + web (front nginx, pile front) + mailpit (profil `mail`)
+docker-compose.yml        db (PostgreSQL 16) + api + worker (ingestion et regroupement périodiques, clôture de l'édition à 17 h) + web (front nginx, pile front) + mailpit (profil `mail`)
 scripts/                  test-api.sh (tests), smoke.py (parcours de bout en bout)
 api/
   Dockerfile, pyproject.toml, alembic.ini
