@@ -72,6 +72,7 @@ def test_cookie_secure_when_configured(api, mails, monkeypatch):
 
     monkeypatch.setenv("COOKIE_SECURE", "true")
     monkeypatch.setenv("MAIL_BACKEND", "smtp")  # console is refused with COOKIE_SECURE=true
+    monkeypatch.setenv("ADMIN_PASSWORD", "un-vrai-secret-long")  # the dev default is refused with COOKIE_SECURE=true
     monkeypatch.setenv("SMTP_HOST", "mail.test")
     get_settings.cache_clear()
     try:

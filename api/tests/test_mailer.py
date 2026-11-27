@@ -6,6 +6,9 @@ from app.services import mailer
 from config.settings import Settings
 
 
+OWN_PASSWORD = "un-vrai-secret-long"
+
+
 def _settings(**kw):
     return Settings(database_url="postgresql+psycopg://x/x", **kw)
 
@@ -82,8 +85,19 @@ def test_login_message_contains_link():
 
 def test_console_backend_refused_with_secure_cookies():
     with pytest.raises(ValueError, match="MAIL_BACKEND=console"):
-        _settings(mail_backend="console", cookie_secure=True)
-    _settings(mail_backend="smtp", smtp_host="h", cookie_secure=True)  # fine
+        _settings(mail_backend="console", cookie_secure=True, admin_password=OWN_PASSWORD)
+    _settings(mail_backend="smtp", smtp_host="h", cookie_secure=True, admin_password=OWN_PASSWORD)  # fine
+
+
+def test_each_production_refusal_fires_on_its_own():
+    # Default admin password only (mailer is fine): refused for ADMIN_PASSWORD, not for the mailer.
+    with pytest.raises(ValueError, match="ADMIN_PASSWORD") as e:
+        _settings(mail_backend="smtp", smtp_host="h", cookie_secure=True)
+    assert "MAIL_BACKEND" not in str(e.value)
+    # Console mailer only (password is fine): refused for the mailer, not for ADMIN_PASSWORD.
+    with pytest.raises(ValueError, match="MAIL_BACKEND=console") as e:
+        _settings(mail_backend="console", cookie_secure=True, admin_password=OWN_PASSWORD)
+    assert "ADMIN_PASSWORD" not in str(e.value)
 
 
 def test_console_backend_warns_at_startup(caplog, database_url):

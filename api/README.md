@@ -87,6 +87,12 @@ GET /api/me · POST /api/auth/logout · POST /api/votes/claim · GET /api/votes/
 - **Données personnelles** : `accounts` ne contient que l'e-mail et la date de création. Aucune IP en base ; le limiteur de débit les garde en mémoire, le temps de la fenêtre. L'e-mail dans `login_tokens` est supprimé un jour après expiration ou usage.
 - **Protéger une route** : `account: Account = Depends(current_account)` (`app/deps.py`) ; `401 {"detail": "Authentification requise"}` sans session valide.
 
+### Backoffice (`/api/admin`)
+
+- Mot de passe unique `ADMIN_PASSWORD` (comparaison en temps constant ; `SecretStr`, jamais journalisé). Refus de démarrer avec le défaut de développement si `COOKIE_SECURE=true`, avertissement au démarrage sinon.
+- `POST /api/admin/login` → cookie `cn_admin` (`httpOnly`, `SameSite=Lax`, `Secure` selon `COOKIE_SECURE`, `Path=/api/admin`, 8 h) ; session hachée dans `admin_sessions`, purgée à l'expiration lors d'un login. Limite par IP : `RATE_LIMIT_ADMIN_LOGIN_PER_IP` / `RATE_LIMIT_ADMIN_LOGIN_WINDOW_SECONDS`.
+- **Ajouter une route admin** : l'écrire sur `admin.protected` (`app/routers/admin.py`) : `require_admin` (`app/deps.py`) s'applique à tout le routeur, rien à déclarer par route. Les réponses `/api/admin/*` portent `Cache-Control: no-store` et `X-Robots-Tag: noindex` (middleware de `main.py`).
+
 ### E-mail
 
 `app/services/mailer.py` : interface `Mailer.send(to, subject, body)`, deux implémentations choisies par `MAIL_BACKEND`. `smtp` : `smtplib`, `SMTP_HOST` obligatoire (l'application refuse de démarrer sans), STARTTLS par défaut, authentification si `SMTP_USER` est défini. `console` : écrit le message (lien compris) dans le logger `app.mail` : développement seulement. L'envoi se fait après la réponse (`BackgroundTasks`) ; un échec est journalisé sans adresse ni lien.

@@ -134,6 +134,30 @@ Requête : `{"token": "…"}` (jeton à usage unique, durée de vie limitée).
 - `200` → `{"email": "a@example.org"}`
 - `401` sans session.
 
+## Admin
+
+Backoffice derrière un mot de passe unique (`ADMIN_PASSWORD`), sans comptes ni rôles. Toutes les routes `/api/admin/*` répondent avec `Cache-Control: no-store` et `X-Robots-Tag: noindex`. Les messages d'erreur sont `{"detail": "<message en français>"}`.
+
+**Cookie `cn_admin`** : posé par `login`, `httpOnly`, `SameSite=Lax`, `Secure` si `COOKIE_SECURE=true`, `Path=/api/admin` (le navigateur ne l'envoie qu'aux routes admin), `Max-Age` = `ADMIN_SESSION_HOURS` (8 h par défaut). Valeur : jeton aléatoire, seul son SHA-256 est stocké (table `admin_sessions`). Indépendant de la session citoyenne : `cn_session` ne donne aucun accès admin, `cn_admin` n'en donne aucun aux routes citoyennes.
+
+**Protection** : toute route admin autre que `login`/`logout` exige un `cn_admin` valide et non expiré (dépendance `require_admin`, appliquée au routeur `admin.protected`) ; sinon `401 {"detail": "Authentification administrateur requise"}`. Une route qui reçoit un 401 du backoffice ramène le front à la connexion.
+
+### `POST /api/admin/login`
+
+Requête : `{"password": "…"}` (1024 caractères au plus).
+
+- `200` → `{"authenticated": true}` et `Set-Cookie: cn_admin=…`.
+- `401` → `{"detail": "Mot de passe incorrect"}` (message unique), sans cookie.
+- `422` corps invalide · `429` trop de tentatives (par IP : `RATE_LIMIT_ADMIN_LOGIN_PER_IP`, 10 par `RATE_LIMIT_ADMIN_LOGIN_WINDOW_SECONDS`, 900 s), avec `Retry-After` en secondes. Les tentatives réussies comptent aussi.
+
+### `POST /api/admin/logout`
+
+- `204`, supprime la session côté serveur et le cookie (idempotent, même sans session).
+
+### `GET /api/admin/me`
+
+- `200` → `{"authenticated": true}` · `401` sans session valide.
+
 ## Halving
 
 ### `GET /api/halving/config` — public
