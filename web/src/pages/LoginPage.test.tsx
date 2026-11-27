@@ -103,7 +103,7 @@ describe("Vérification du lien", () => {
     expect(within(screen.getByRole("banner")).getByText(EMAIL)).toBeInTheDocument();
     expect(JSON.stringify({ ...localStorage })).not.toContain("secret123");
     await userEvent.click(screen.getByRole("link", { name: "Continuer" }));
-    expect(await screen.findByTestId("loc")).toHaveTextContent("/composer");
+    await waitFor(() => expect(screen.getByTestId("loc")).toHaveTextContent("/composer"));
   });
 
   it("brouillon fusionné par le serveur : le message l'indique", async () => {

@@ -97,7 +97,7 @@ describe("Accueil : la une publiée", () => {
   it("édition null : message de première une et compte à rebours", async () => {
     stub(current(null));
     renderApp("/");
-    expect(await screen.findByText("La première une sera publiée à 17 h.")).toBeInTheDocument();
+    expect(await screen.findByText(/^La première une sera publiée à \d{2}:\d{2}\.$/)).toBeInTheDocument();
     expect(screen.getByTestId("countdown")).toBeInTheDocument();
     expect(screen.queryByRole("article")).toBeNull();
   });

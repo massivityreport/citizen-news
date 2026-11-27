@@ -4,7 +4,7 @@ import { Countdown } from "../components/Countdown";
 import { EditionView } from "../components/EditionView";
 import { EditionSkeleton, LoadError } from "../components/EditionStates";
 import { usePageTitle } from "../components/usePageTitle";
-import { formatEditionDate } from "../lib/format";
+import { formatClock, formatEditionDate } from "../lib/format";
 import styles from "../components/Edition.module.css";
 
 const TITLE = "La une citoyenne";
@@ -34,7 +34,7 @@ export default function HomePage() {
             <EditionView edition={edition} />
           ) : (
             <div className={styles.state}>
-              <p>La première une sera publiée à 17 h.</p>
+              <p>La première une sera publiée à {formatClock(data.next_close_at)}.</p>
             </div>
           )}
         </>
