@@ -11,7 +11,8 @@ const absoluteWithTime = new Intl.DateTimeFormat("fr-FR", { dateStyle: "long", t
 const WEEK = 7 * 86_400_000;
 
 /** « il y a 3 heures » jusqu'à une semaine, puis « 12 novembre 2026 ». Date invalide : chaîne vide. */
-export function formatDate(iso: string, now: number = Date.now()): string {
+export function formatDate(iso: string | null | undefined, now: number = Date.now()): string {
+  if (!iso) return "";
   const t = Date.parse(iso);
   if (Number.isNaN(t)) return "";
   const diff = now - t;

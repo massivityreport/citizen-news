@@ -2,7 +2,8 @@ export interface Source {
   name: string;
   url: string;
   title: string;
-  published_at: string;
+  /** null : l'article du flux n'a pas de date. */
+  published_at: string | null;
 }
 
 /** Sujet du bassin (contrat V2) : aucun compteur d'approbation avant la publication. */
@@ -86,7 +87,7 @@ export interface Me {
 
 export interface VerifyResult extends Me {
   /** Brouillon de une fusionné à la vérification (null : aucun, ou édition fermée). */
-  draft?: { added: number; ignored: number } | null;
+  draft: { added: number; ignored: number } | null;
 }
 
 export interface AdminSource {
