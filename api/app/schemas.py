@@ -186,8 +186,11 @@ class AdminStatsCounts(BaseModel):
     selections: int  # selection rows (topics put in a une)
 
 
-class AdminStatsDay(AdminStatsCounts):
-    date: str  # YYYY-MM-DD, UTC
+class AdminStatsDay(BaseModel):
+    date: str  # YYYY-MM-DD, UTC (first key, as in the contract)
+    articles: int
+    participants: int
+    selections: int
 
 
 class AdminStats(BaseModel):

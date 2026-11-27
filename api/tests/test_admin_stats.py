@@ -119,6 +119,7 @@ def test_route_returns_aggregates_and_nothing_personal(admin, session, source):
     assert body["last_24h"] == {"articles": 1, "participants": 0, "selections": 0}
     assert set(body) == {"last_24h", "total", "series"}
     assert all(set(p) == {"date", "articles", "participants", "selections"} for p in body["series"])
+    assert list(body["series"][0]) == ["date", "articles", "participants", "selections"]  # contract order
     assert "vote" not in r.text and "@" not in r.text  # no votes/voters of V1
 
 
