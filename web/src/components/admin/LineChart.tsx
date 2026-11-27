@@ -49,6 +49,13 @@ export function niceStep(max: number, count = 4): number {
   return Math.max(1, (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * pow); // des votes : graduations entières
 }
 
+/** Jusqu’à 31 points : un marqueur par point. Au-delà : environ 10 marqueurs régulièrement espacés (et le dernier), pour que la forme de la série reste visible. */
+function markerPoints<T>(points: T[]): T[] {
+  if (points.length <= 31) return points;
+  const every = Math.ceil(points.length / 10);
+  return points.filter((_, k) => k % every === 0 || k === points.length - 1);
+}
+
 function Marker({ shape, x, y, color }: { shape: (typeof SHAPES)[number]; x: number; y: number; color: string }) {
   const common = { fill: color, className: styles.marker };
   if (shape === "square") return <rect {...common} x={x - 4} y={y - 4} width={8} height={8} />;
@@ -123,8 +130,14 @@ export function LineChart({ series, title, yLabel, emptyText = "Aucune donnée �
             {yLabel}
           </text>
         )}
-        {xTicks.map((t) => (
-          <text key={t} className={styles.tick} x={x(t)} y={H - 12} textAnchor={xTicks.length === 1 ? "middle" : "middle"}>
+        {xTicks.map((t, k) => (
+          <text
+            key={t}
+            className={styles.tick}
+            x={x(t)}
+            y={H - 12}
+            textAnchor={xTicks.length === 1 || (k > 0 && k < xTicks.length - 1) ? "middle" : k === 0 ? "start" : "end"}
+          >
             {dayFmt.format(t)}
           </text>
         ))}
@@ -143,8 +156,8 @@ export function LineChart({ series, title, yLabel, emptyText = "Aucune donnée �
                 points={s.points.map((p) => `${x(p.t)},${y(p.v)}`).join(" ")}
               />
             )}
-            {(s.points.length <= 31 ? s.points : []).map((p) => (
-              <Marker key={p.t} shape={SHAPES[i]} x={x(p.t)} y={y(p.v)} color={COLORS[i]} />
+            {markerPoints(s.points).map((p, k) => (
+              <Marker key={k} shape={SHAPES[i]} x={x(p.t)} y={y(p.v)} color={COLORS[i]} />
             ))}
           </g>
         ))}

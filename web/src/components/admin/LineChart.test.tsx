@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import { LineChart, niceStep } from "./LineChart";
 
@@ -81,5 +81,53 @@ describe("LineChart", () => {
 
   it("niceStep : pas ronds", () => {
     expect([niceStep(1), niceStep(4), niceStep(9), niceStep(23), niceStep(1000)]).toEqual([1, 1, 5, 10, 500]);
+  });
+});
+
+describe("LineChart : lisibilité avec plusieurs séries et beaucoup de points", () => {
+  const days = (n: number) => Array.from({ length: n }, (_, i) => new Date(Date.UTC(2026, 10, 1 + i)).toISOString().slice(0, 10));
+  const three = (n: number) => [
+    { id: "a", label: "A", points: days(n).map((date, i) => ({ date, value: i % 7 })) },
+    { id: "b", label: "B", points: days(n).map((date, i) => ({ date, value: (i * 2) % 5 })) },
+    { id: "c", label: "C", points: days(n).map((date, i) => ({ date, value: i % 3 })) },
+  ];
+
+  it("30 jours × 3 séries : 90 marqueurs, trois traits (continu, tirets, pointillés) et trois formes", () => {
+    render(<LineChart title="Trois mois" series={three(30)} />);
+    const svg = chart("Trois mois");
+    expect(svg.querySelectorAll("circle, rect, polygon")).toHaveLength(90);
+    const dashes = ["a", "b", "c"].map((id) => svg.querySelector(`[data-series=${id}] polyline`)!.getAttribute("stroke-dasharray"));
+    expect(new Set(dashes).size).toBe(3);
+    expect(svg.querySelectorAll("[data-series=a] circle")).toHaveLength(30);
+    expect(svg.querySelectorAll("[data-series=b] rect")).toHaveLength(30);
+    expect(svg.querySelectorAll("[data-series=c] polygon")).toHaveLength(30);
+  });
+
+  it("plus de 31 points : quelques marqueurs par série restent, avec leur forme", () => {
+    render(<LineChart title="Long" series={three(90)} />);
+    const svg = chart("Long");
+    for (const [id, tag] of [["a", "circle"], ["b", "rect"], ["c", "polygon"]]) {
+      const n = svg.querySelectorAll(`[data-series=${id}] ${tag}`).length;
+      expect(n).toBeGreaterThanOrEqual(8);
+      expect(n).toBeLessThanOrEqual(12);
+    }
+  });
+
+  it("deux points à la même date : pas d’avertissement de clé dupliquée", () => {
+    const errors: unknown[][] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((...a) => void errors.push(a));
+    render(<LineChart title="Doublons" series={[{ id: "a", label: "A", points: [{ date: "2026-11-01", value: 1 }, { date: "2026-11-01", value: 2 }] }]} />);
+    spy.mockRestore();
+    expect(errors).toEqual([]);
+    expect(chart("Doublons").querySelectorAll("circle")).toHaveLength(2);
+  });
+
+  it("étiquettes des bords alignées vers l’intérieur (start / end), celles du milieu centrées", () => {
+    render(<LineChart title="Bords" series={three(10)} />);
+    const labels = Array.from(chart("Bords").querySelectorAll("text")).filter((t) => /nov\.$/.test(t.textContent ?? ""));
+    const anchors = labels.map((t) => t.getAttribute("text-anchor"));
+    expect(anchors[0]).toBe("start");
+    expect(anchors[anchors.length - 1]).toBe("end");
+    expect(anchors.slice(1, -1).every((a) => a === "middle")).toBe(true);
   });
 });
