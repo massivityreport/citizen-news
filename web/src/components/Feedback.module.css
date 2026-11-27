@@ -22,3 +22,9 @@
 .btn { font: inherit; font-weight: 700; background: var(--c-primary); color: var(--c-on-primary); border: 0; border-radius: 999px; padding: .7rem 1.3rem; min-height: 2.75rem; cursor: pointer; }
 .btn:disabled { opacity: .6; cursor: not-allowed; }
 .secondary { font: inherit; background: none; border: 0; text-decoration: underline; color: var(--c-text); padding: .5rem; cursor: pointer; }
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}

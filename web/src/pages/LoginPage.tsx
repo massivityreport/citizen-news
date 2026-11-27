@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate, useSearchParams } from "react-router-do
 import { useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../api/client";
 import { meKey, uneKey, useLogout, useMe } from "../api/hooks";
+import { journal } from "../lib/journal";
 import { usePageTitle } from "../components/usePageTitle";
 import styles from "./LoginPage.module.css";
 
@@ -69,6 +70,7 @@ export default function LoginPage() {
       // La une en cache peut être celle d'un autre compte : on l'oublie, la fusion attend son rechargement.
       qc.removeQueries({ queryKey: uneKey });
       qc.setQueryData(meKey, { email: user.email });
+      journal.record({ type: "login" });
       // Le brouillon local n'est pas touché ici : la page /composer fusionne ce qui n'est pas déjà dans la une.
       setPhase({ kind: "done", message: doneMessage(user.draft) });
     })();

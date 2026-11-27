@@ -5,6 +5,7 @@ import { meKey, uneKey, useMe, useUne } from "../api/hooks";
 import type { Une } from "../api/types";
 import { MAX_PLACES } from "../lib/draft";
 import { draftStore } from "../lib/draftStore";
+import { journal } from "../lib/journal";
 
 export type Outcome = "added" | "removed" | "present" | "absent" | "full" | "closed" | "unavailable" | "unauthorized" | "error";
 export interface Result {
@@ -87,6 +88,7 @@ export function useComposition(meta: EditionMeta | undefined, poolIds?: Readonly
         const body = await (adding ? api.uneAdd(id) : api.uneRemove(id));
         // Une réponse n'écrase l'état que s'il ne reste aucune autre écriture en vol.
         if (inflight.current === 1) qc.setQueryData(uneKey, body);
+        journal.record({ type: adding ? "topic_added" : "topic_removed", topic_id: id });
         return { outcome: adding ? "added" : "removed" };
       } catch (e) {
         setServerIds((l) => (adding ? l.filter((x) => x !== id) : [...l.filter((x) => x !== id), id]));
@@ -128,6 +130,7 @@ export function useComposition(meta: EditionMeta | undefined, poolIds?: Readonly
         const d = draftStore.get();
         const next = adding ? [...cur, id] : cur.filter((x) => x !== id);
         draftStore.set({ editionDate: meta?.edition_date ?? d.editionDate, ids: next });
+        journal.record({ type: adding ? "topic_added" : "topic_removed", topic_id: id });
         return { outcome: adding ? "added" : "removed" };
       }
       return writeServer(id, adding);

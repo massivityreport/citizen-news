@@ -3,6 +3,7 @@ import { useLocation } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 import { useMe } from "../api/hooks";
 import type { FeedbackKind } from "../api/types";
+import { journal } from "../lib/journal";
 import styles from "./Feedback.module.css";
 
 const MAX_LENGTH = 2000;
@@ -86,6 +87,7 @@ function FeedbackDialog({ onClose }: { onClose: () => void }) {
   const [message, setMessage] = useState("");
   const [email, setEmail] = useState("");
   const [errors, setErrors] = useState<{ message?: string; email?: string; form?: string }>({});
+  const [attach, setAttach] = useState(true);
   const [sending, setSending] = useState(false);
   const [done, setDone] = useState(false);
   const titleId = useId();
@@ -126,7 +128,7 @@ function FeedbackDialog({ onClose }: { onClose: () => void }) {
     if (next.message || next.email) return;
     setSending(true);
     try {
-      await api.feedback({ kind, message: text, ...(account ? {} : { email: email.trim() }), ...page });
+      await api.feedback({ kind, message: text, ...(account ? {} : { email: email.trim() }), ...page, ...(attach ? { recent_actions: journal.get() } : {}) });
       setDone(true);
     } catch (err) {
       const limited = err instanceof ApiError && err.isRateLimited;
@@ -198,6 +200,15 @@ function FeedbackDialog({ onClose }: { onClose: () => void }) {
                 )}
               </>
             )}
+            <label className={styles.check}>
+              <input type="checkbox" checked={attach} onChange={(e) => setAttach(e.target.checked)} />
+              Joindre mon parcours récent
+            </label>
+            <small>
+              {attach
+                ? "Votre parcours récent est joint à votre avis : les 20 dernières actions de cette visite (pages ouvertes, sujets ajoutés ou retirés de votre une, connexion), avec leur heure."
+                : "Votre parcours récent n'est pas joint : rien n'en sera envoyé."}
+            </small>
             {errors.form && (
               <p role="alert" className={styles.error}>
                 {errors.form}

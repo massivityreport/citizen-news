@@ -28,6 +28,9 @@ let actions: RecentAction[] = load();
 
 export const journal = {
   record(action: ActionInput) {
+    const last = actions.at(-1);
+    // Même page deux fois de suite (rendu double en dev, rechargement) : une seule entrée.
+    if (action.type === "page" && last?.type === "page" && last.page === action.page) return;
     actions = [...actions, { ...action, at: new Date().toISOString() }].slice(-MAX_ACTIONS);
     try {
       window.sessionStorage.setItem(KEY, JSON.stringify(actions));

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { bodiesOf, res, stubFetch } from "../test/api-stub";
+import { journal } from "../lib/journal";
 import { renderApp } from "../test/utils";
 
 type Stub = ReturnType<typeof stubFetch>;
@@ -142,5 +143,80 @@ describe("formulaire", () => {
     expect(d.querySelector("b")).toBeNull();
     await userEvent.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
+
+describe("parcours récent", () => {
+  const CASE = "Joindre mon parcours récent";
+
+  it("le journal suit les pages ouvertes, sans les paramètres d'URL, avec l'heure", async () => {
+    setup(null);
+    renderApp("/archives?q=secret");
+    await screen.findByRole("banner");
+    await userEvent.click(within(screen.getByRole("navigation", { name: "Navigation principale" })).getByRole("link", { name: "Comment ça marche" }));
+    await screen.findByRole("heading", { level: 1, name: /Comment/ });
+    const pages = journal.get().filter((a) => a.type === "page");
+    expect(pages.map((a) => a.page)).toEqual(["/archives", "/comment-ca-marche"]);
+    expect(Date.parse(pages[0].at)).not.toBeNaN();
+  });
+
+  it("le backoffice n'entre pas au journal", async () => {
+    setup(null);
+    renderApp("/admin");
+    await screen.findByRole("heading", { level: 1 });
+    expect(journal.get()).toEqual([]);
+  });
+
+  it("case cochée par défaut, avec la phrase qui informe", async () => {
+    setup(null);
+    renderApp("/archives");
+    await openForm();
+    const d = await dialog();
+    expect(within(d).getByRole("checkbox", { name: CASE })).toBeChecked();
+    expect(within(d).getByText(/parcours récent.*joint à votre avis/i)).toBeInTheDocument();
+  });
+
+  it("cochée : les actions de la visite partent avec l'avis (20 au plus)", async () => {
+    const fetchMock = setup("moi@example.org");
+    for (let i = 0; i < 25; i++) journal.record({ type: "page", page: `/p${i}` });
+    renderApp("/archives");
+    await openForm();
+    const d = await dialog();
+    await userEvent.type(within(d).getByLabelText("Votre message"), "Bonjour");
+    await userEvent.click(within(d).getByRole("button", { name: "Envoyer" }));
+    await screen.findByText(/merci/i);
+    const [body] = bodiesOf(fetchMock, "POST /api/feedback");
+    expect(body.recent_actions).toHaveLength(20);
+    expect(body.recent_actions.at(-1)).toMatchObject({ type: "page", page: "/archives" });
+    expect(body.recent_actions[0]).toMatchObject({ page: "/p6" });
+  });
+
+  it("décochée : rien du parcours n'est envoyé", async () => {
+    const fetchMock = setup("moi@example.org");
+    journal.record({ type: "login" });
+    renderApp("/archives");
+    await openForm();
+    const d = await dialog();
+    await userEvent.click(within(d).getByRole("checkbox", { name: CASE }));
+    expect(within(d).getByRole("checkbox", { name: CASE })).not.toBeChecked();
+    await userEvent.type(within(d).getByLabelText("Votre message"), "Bonjour");
+    await userEvent.click(within(d).getByRole("button", { name: "Envoyer" }));
+    await screen.findByText(/merci/i);
+    const [body] = bodiesOf(fetchMock, "POST /api/feedback");
+    expect(body).not.toHaveProperty("recent_actions");
+    expect(JSON.stringify(body)).not.toContain("login");
+  });
+
+  it("hors avis, le parcours ne part jamais : aucun appel réseau tant que l'avis n'est pas envoyé", async () => {
+    const fetchMock = setup("moi@example.org");
+    renderApp("/archives");
+    await openForm();
+    await dialog();
+    await userEvent.keyboard("{Escape}");
+    await userEvent.click(within(screen.getByRole("banner")).getByRole("button", { name: "Votre avis" }));
+    await userEvent.click(within(await dialog()).getByRole("button", { name: "Annuler" }));
+    const sent = fetchMock.mock.calls.filter(([, i]) => i?.method && i.method !== "GET");
+    expect(sent).toEqual([]);
+    expect(JSON.stringify(fetchMock.mock.calls)).not.toContain("recent_actions");
   });
 });
