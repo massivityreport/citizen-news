@@ -39,7 +39,7 @@ def is_read(session, fid):
 
 @pytest.mark.parametrize("method,path", [
     ("GET", "/api/admin/feedback"), ("GET", "/api/admin/feedback/unread-count"), ("GET", "/api/admin/feedback/1"),
-    ("POST", "/api/admin/feedback/1/read"), ("POST", "/api/admin/feedback/1/unread"), ("DELETE", "/api/admin/feedback/1"),
+    ("POST", "/api/admin/feedback/1/read"), ("POST", "/api/admin/feedback/1/unread"), ("POST", "/api/admin/feedback/1/replies"), ("DELETE", "/api/admin/feedback/1"),
 ])
 def test_refused_without_admin_session(client, session, method, path):
     make(session, 1)

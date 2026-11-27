@@ -380,7 +380,7 @@ class AdminPreview(BaseModel):
 
 
 class AdminFeedbackItem(BaseModel):
-    """One row of the opinions list. `answered` stays false until replies exist."""
+    """One row of the opinions list. `answered`: at least one reply was e-mailed."""
 
     id: int
     created_at: datetime
@@ -401,6 +401,27 @@ class AdminFeedbackPage(BaseModel):
     page_size: int
 
 
+FEEDBACK_REPLY_MAX_LENGTH = 5000
+
+
+class AdminFeedbackReplyOut(BaseModel):
+    id: int
+    created_at: datetime
+    message: str
+
+
+class AdminFeedbackReplyRequest(BaseModel):
+    message: str = Field(max_length=FEEDBACK_REPLY_MAX_LENGTH * 2)  # raw cap protects the parser
+
+    @field_validator("message")
+    @classmethod
+    def _message(cls, value: str) -> str:
+        value = value.strip()
+        if not value or len(value) > FEEDBACK_REPLY_MAX_LENGTH:
+            raise ValueError("réponse invalide")
+        return value
+
+
 class AdminFeedbackDetail(BaseModel):
     id: int
     created_at: datetime
@@ -414,6 +435,7 @@ class AdminFeedbackDetail(BaseModel):
     recent_actions: list[dict] | None
     is_read: bool
     answered: bool = False
+    replies: list[AdminFeedbackReplyOut] = []
 
 
 class AdminUnreadCount(BaseModel):

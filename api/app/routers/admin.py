@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from app.db import get_session
 from app.deps import ADMIN_COOKIE, client_ip, clock, require_admin
 from app.schemas import (
-    AdminArticlePage, AdminEditionPage, AdminFeedbackDetail, AdminFeedbackPage, AdminUnreadCount, AdminLoginRequest, AdminPreview, AdminSourceCreate, AdminSourceDeleted, AdminSourceOut, AdminStats, AdminTopicDetail,
+    AdminArticlePage, AdminEditionPage, AdminFeedbackDetail, AdminFeedbackPage, AdminFeedbackReplyRequest, AdminUnreadCount, AdminLoginRequest, AdminPreview, AdminSourceCreate, AdminSourceDeleted, AdminSourceOut, AdminStats, AdminTopicDetail,
     AdminTopicPage, EditionOut,
 )
 from app.services import admin_articles as articles_service
@@ -27,6 +27,7 @@ from app.services import admin_stats as stats_service
 from app.services import admin_topics as topics_service
 from app.services import admin as service
 from app.services import sources as sources_service
+from app.services.mailer import Mailer, get_mailer
 from app.services.safe_fetch import fetch_public
 from app.services.ratelimit import RateLimiter, enforce, get_rate_limiter
 from config.settings import get_settings
@@ -285,6 +286,18 @@ def mark_feedback_read(feedback_id: int, db: Session = Depends(get_session)) -> 
 @protected.post("/feedback/{feedback_id}/unread", response_model=AdminFeedbackDetail)
 def mark_feedback_unread(feedback_id: int, db: Session = Depends(get_session)) -> AdminFeedbackDetail:
     return _feedback_or_404(feedback_service.set_read(db, feedback_id, False))
+
+
+@protected.post("/feedback/{feedback_id}/replies", response_model=AdminFeedbackDetail, status_code=201)
+def reply_to_feedback(
+    feedback_id: int, body: AdminFeedbackReplyRequest, db: Session = Depends(get_session), mailer: Mailer = Depends(get_mailer),
+) -> AdminFeedbackDetail:
+    """E-mails the reply to the author, then stores it; 502 and nothing stored if the e-mail could not be sent."""
+    try:
+        return _feedback_or_404(feedback_service.add_reply(db, mailer, feedback_id, body.message))
+    except feedback_service.ReplySendError:
+        logger.error("Échec de l'envoi d'une réponse à un avis")  # never the address nor the text
+        raise HTTPException(status_code=502, detail="L'e-mail n'a pas pu être envoyé : la réponse n'est pas enregistrée, réessayez.") from None
 
 
 @protected.delete("/feedback/{feedback_id}", status_code=204)

@@ -204,3 +204,16 @@ class Feedback(Base):
     browser: Mapped[str] = mapped_column(String(300))
     recent_actions: Mapped[list | None] = mapped_column(JSON)
     is_read: Mapped[bool] = mapped_column(Boolean, server_default=false())
+
+
+class FeedbackReply(Base):
+    """A reply the admin e-mailed to the author of an opinion. Stored only once the e-mail was sent;
+    deleted with its opinion."""
+
+    __tablename__ = "feedback_replies"
+    __table_args__ = (Index("ix_feedback_replies_feedback_id", "feedback_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    feedback_id: Mapped[int] = mapped_column(ForeignKey("feedback.id", ondelete="CASCADE"))
+    created_at: Mapped[datetime] = _now()
+    message: Mapped[str] = mapped_column(Text)
