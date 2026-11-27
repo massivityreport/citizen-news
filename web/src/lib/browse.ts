@@ -12,7 +12,8 @@ interface Browse {
   seen: number[];
 }
 
-let memory: Browse | null = null;
+let state: Browse | null = null;
+const listeners = new Set<() => void>();
 
 export function makeSeed(length = 24): string {
   const bytes = new Uint8Array(length);
@@ -22,8 +23,7 @@ export function makeSeed(length = 24): string {
   return Array.from(bytes, (b) => ALPHABET[b % 64]).join("");
 }
 
-/** undefined : stockage indisponible (on se rabat sur la mémoire) ; null : stockage vide ou invalide. */
-function read(): Browse | null | undefined {
+function read(): Browse | null {
   try {
     const raw = window.sessionStorage.getItem(KEY);
     if (!raw) return null;
@@ -33,13 +33,13 @@ function read(): Browse | null | undefined {
       ? [...new Set(d.seen.filter((x): x is number => Number.isSafeInteger(x) && (x as number) > 0))]
       : [];
     return { seed: d.seed, seen };
-  } catch (e) {
-    return e instanceof SyntaxError ? null : undefined;
+  } catch {
+    return null; // illisible ou stockage indisponible : on repart d'une session neuve, gardée en mémoire
   }
 }
 
 function write(b: Browse) {
-  memory = b;
+  state = b;
   try {
     window.sessionStorage.setItem(KEY, JSON.stringify(b));
   } catch {
@@ -47,33 +47,41 @@ function write(b: Browse) {
   }
 }
 
+/** Lu une fois depuis le stockage, puis tenu en mémoire (et réécrit à chaque changement). */
 function current(): Browse {
-  const stored = read();
-  if (stored) {
-    memory = stored;
-    return stored;
+  if (!state) {
+    state = read();
+    if (!state) write({ seed: makeSeed(), seen: [] });
   }
-  if (stored === undefined && memory) return memory;
-  const fresh = { seed: makeSeed(), seen: [] };
-  write(fresh);
-  return fresh;
+  return state!;
+}
+
+/** Pour les tests : oublie l'état en mémoire (la « nouvelle session »). */
+export function resetBrowse() {
+  state = null;
+  listeners.forEach((l) => l());
+}
+
+export function subscribeSeen(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => void listeners.delete(listener);
 }
 
 export function getSeed(): string {
   return current().seed;
 }
 
+/** Même référence tant que la liste ne change pas (useSyncExternalStore). */
 export function getSeen(): number[] {
   return current().seen;
 }
 
-/** Note un sujet comme vu (à la fin, dans l'ordre de passage). Renvoie la liste à jour. */
-export function markSeen(id: number): number[] {
+/** Note un sujet comme vu (à la fin, dans l'ordre de passage). */
+export function markSeen(id: number): void {
   const b = current();
-  if (b.seen.includes(id)) return b.seen;
-  const next = { ...b, seen: [...b.seen, id].slice(-MAX_SEEN) };
-  write(next);
-  return next.seen;
+  if (b.seen.includes(id)) return;
+  write({ ...b, seen: [...b.seen, id].slice(-MAX_SEEN) });
+  listeners.forEach((l) => l());
 }
 
 /** Vus d'abord (dans l'ordre de passage, ceux qui sont encore au bassin), puis non vus dans l'ordre du serveur. */

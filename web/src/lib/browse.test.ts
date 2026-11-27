@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { getSeed, getSeen, makeSeed, markSeen, orderRandom } from "./browse";
+import { getSeed, getSeen, makeSeed, markSeen, orderRandom, resetBrowse } from "./browse";
 
-beforeEach(() => window.sessionStorage.clear());
+beforeEach(() => {
+  window.sessionStorage.clear();
+  resetBrowse();
+});
 
 describe("graine de session", () => {
   it("fait 16 caractères ou plus dans [A-Za-z0-9_-]", () => {
@@ -13,11 +16,13 @@ describe("graine de session", () => {
     const a = getSeed();
     expect(getSeed()).toBe(a);
     window.sessionStorage.clear(); // nouvelle session de navigation
+    resetBrowse();
     expect(getSeed()).not.toBe(a);
   });
 
   it("ignore une graine invalide stockée", () => {
     window.sessionStorage.setItem("citizen-news:browse:v1", JSON.stringify({ seed: "court", seen: [1] }));
+    resetBrowse();
     expect(getSeed()).toMatch(/^[A-Za-z0-9_-]{16,}$/);
   });
 });
@@ -27,6 +32,8 @@ describe("sujets vus", () => {
     markSeen(5);
     markSeen(2);
     markSeen(5);
+    expect(getSeen()).toEqual([5, 2]);
+    resetBrowse(); // rechargement : relu depuis sessionStorage
     expect(getSeen()).toEqual([5, 2]);
   });
 });

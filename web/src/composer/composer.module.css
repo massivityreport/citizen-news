@@ -86,3 +86,4 @@
   .page { max-width: 36rem; margin-inline: auto; }
   .cardScroll { max-height: 18rem; }
 }
+.help { margin: 0 0 .5rem; font-size: .85rem; }

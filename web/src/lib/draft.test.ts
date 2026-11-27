@@ -17,7 +17,7 @@ describe("brouillon local", () => {
   });
 
   it("nettoie un contenu corrompu au chargement", () => {
-    window.localStorage.setItem(DRAFT_KEY, JSON.stringify({ v: 1, ids: [1, 1, "x", 2, 99999999999999999999] }));
+    window.localStorage.setItem(DRAFT_KEY, JSON.stringify({ v: 1, ids: [1, 1, "x", 2, Number.MAX_VALUE] }));
     expect(loadDraft().ids).toEqual([1, 2]);
     window.localStorage.setItem(DRAFT_KEY, "{pas du json");
     expect(loadDraft().ids).toEqual([]);
