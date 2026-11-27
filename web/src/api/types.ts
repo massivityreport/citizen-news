@@ -215,4 +215,14 @@ export interface FeedbackInput {
   page_name: string;
   page_url: string;
   screen: string;
+  /** Le parcours récent, seulement si l'utilisateur l'a joint (20 actions au plus). */
+  recent_actions?: RecentAction[];
+}
+
+/** Une action du parcours récent (joint à l'avis sur demande). `page` : chemin sans paramètres ; `topic_id` : sujets seulement. */
+export interface RecentAction {
+  type: "page" | "topic_added" | "topic_removed" | "login";
+  at: string;
+  page?: string;
+  topic_id?: number;
 }
