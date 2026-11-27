@@ -92,3 +92,9 @@ def make_topic(session, title, sources, state="new", wave=0, hours_ago=1.0, now=
     for source in sources:
         make_article(session, source, f"{topic.id}-{source.id}", f"{title} ({source.name})", hours_ago=hours_ago, now=now, topic_id=topic.id)
     return topic
+
+
+def original_url(request) -> str:
+    """The URL the code asked for. safe_fetch connects to the validated IP, so `request.url` holds that IP
+    and the real host name is in the Host header."""
+    return f"{request.url.scheme}://{request.headers['host']}{request.url.raw_path.decode()}"

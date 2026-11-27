@@ -1,11 +1,8 @@
 """Media sources managed from the back office (the database is the reference, see ingest.sync_sources)."""
 
-import re
 import unicodedata
 from dataclasses import dataclass
 from datetime import datetime
-from urllib.parse import urlsplit, urlunsplit
-
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
@@ -13,7 +10,9 @@ from sqlalchemy.orm import Session
 
 from app.models.entities import Article, DeletedSource, MediaSource
 from app.services.ingest import parse_feed
-from app.services.safe_fetch import MAX_URL_CHARS, FetchError
+from app.services.feed_url import FeedUrlError, normalize_feed_url
+from app.services.ingest import lock_sources
+from app.services.safe_fetch import FetchError
 
 MAX_NAME_CHARS = 100
 
@@ -47,24 +46,11 @@ def clean_name(raw: str) -> str:
 
 
 def clean_url(raw: str) -> str:
-    """The URL to store: http(s) only, no user:pass@, scheme and host lowercased, no fragment."""
-    url = raw.strip()
-    if not url:
-        raise SourceError(422, "L’adresse du flux est obligatoire.")
-    if len(url) > MAX_URL_CHARS:
-        raise SourceError(422, f"L’adresse du flux ne doit pas dépasser {MAX_URL_CHARS} caractères.")
-    if re.search(r"[\s\\\x00-\x1f]", url):
-        raise SourceError(422, "L’adresse du flux contient des caractères interdits (espace, retour à la ligne, barre oblique inverse).")
+    """The URL to store (see feed_url.normalize_feed_url)."""
     try:
-        parts = urlsplit(url)
-        parts.port  # noqa: B018  (raises ValueError on a malformed port)
-    except ValueError:
-        raise SourceError(422, "L’adresse du flux n’est pas valide.") from None
-    if parts.scheme.lower() not in ("http", "https") or not parts.hostname:
-        raise SourceError(422, "L’adresse du flux doit commencer par http:// ou https://.")
-    if "@" in parts.netloc or parts.username is not None or parts.password is not None:
-        raise SourceError(422, "L’adresse du flux ne doit pas contenir d’identifiants (utilisateur:motdepasse@).")
-    return urlunsplit((parts.scheme.lower(), parts.netloc.lower(), parts.path, parts.query, ""))
+        return normalize_feed_url(raw)
+    except FeedUrlError as exc:
+        raise SourceError(422, str(exc)) from None
 
 
 def check_feed(content: bytes) -> None:
@@ -141,6 +127,7 @@ def delete_source(db: Session, source_id: int, confirm: int) -> int:
     """Delete for good a source and, by cascade, its articles. `confirm` must be the number of articles
     that will disappear. The source row is locked first, so an ingestion cannot add articles between the
     count and the delete (its insert waits, then fails: the source is gone). Returns that number."""
+    lock_sources(db)  # serialises with sync_sources (see there)
     source = db.scalar(select(MediaSource).where(MediaSource.id == source_id).with_for_update())
     if source is None:
         raise SourceError(404, "Source introuvable.")
@@ -152,7 +139,14 @@ def delete_source(db: Session, source_id: int, confirm: int) -> int:
             f"Confirmation invalide : la suppression effacerait {count} article{'s' if count > 1 else ''}. "
             "Rechargez la liste et confirmez le nombre exact.",
         )
-    db.execute(insert(DeletedSource).values(feed_url=source.feed_url).on_conflict_do_nothing(index_elements=["feed_url"]))
+    db.execute(insert(DeletedSource).values(feed_url=_normal(source.feed_url)).on_conflict_do_nothing(index_elements=["feed_url"]))
     db.delete(source)  # ON DELETE CASCADE removes the articles in the database
     db.commit()
     return count
+
+
+def _normal(url: str) -> str:
+    try:
+        return normalize_feed_url(url)
+    except FeedUrlError:  # a legacy row that is not normalisable: keep it as it is
+        return url

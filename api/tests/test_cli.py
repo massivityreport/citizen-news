@@ -12,7 +12,8 @@ def test_refresh_ingests_then_clusters(session, monkeypatch):
     from app.services import ingest as ingest_module
 
     monkeypatch.setattr(ingest_module, "load_feeds", lambda: [ALPHA, BETA])
-    monkeypatch.setattr(ingest_module, "make_client", make_client)
+    real = ingest_module.fetch_public
+    monkeypatch.setattr(ingest_module, "fetch_public", lambda url, **kw: real(url, **{**kw, "client": make_client()}))
     assert cli.main(["refresh"]) == 0
     session.expire_all()
     assert session.scalar(select(func.count()).select_from(Article)) == 4

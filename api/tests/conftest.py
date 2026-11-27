@@ -115,3 +115,11 @@ def logged(client, session):
     client.cookies.set(SESSION_COOKIE, token)
     client.account_id = account.id
     return client
+
+
+@pytest.fixture(autouse=True)
+def _no_real_dns(monkeypatch):
+    """No test resolves a name for real: every name is a public address unless a test injects its own resolver."""
+    from app.services import safe_fetch
+
+    monkeypatch.setattr(safe_fetch, "system_resolver", lambda host, port: ["93.184.216.34"])

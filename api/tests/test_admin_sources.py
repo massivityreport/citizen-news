@@ -11,7 +11,7 @@ from app.routers.admin import get_fetcher
 from app.services.ingest import ingest, sync_sources
 from app.services.safe_fetch import GENERIC_MESSAGE, FetchError, fetch_public
 from config.feeds import FeedConfig
-from tests.helpers import make_article, make_sources, make_topic
+from tests.helpers import make_article, make_sources, make_topic, original_url
 from tests.test_admin_auth import PASSWORD
 
 RSS = b"""<?xml version="1.0"?><rss version="2.0"><channel><title>T</title>
@@ -150,7 +150,7 @@ def test_add_a_valid_source(admin, session, fetched):
 def test_added_source_is_ingested(admin, session, fetched):
     add(admin)
     seen = []
-    client = httpx.Client(transport=httpx.MockTransport(lambda r: (seen.append(str(r.url)), httpx.Response(200, content=RSS))[1]))
+    client = httpx.Client(transport=httpx.MockTransport(lambda r: (seen.append(original_url(r)), httpx.Response(200, content=RSS))[1]))
     ingest(session, [], client=client)
     assert seen == ["https://new.example/rss"] and count(session, Article) == 1
 

@@ -14,8 +14,10 @@ Every failure raises FetchError with ONE generic message, whether the target was
 slow or answered with an error: the API must not tell an admin which internal hosts exist.
 The cause goes to the log only.
 
-Residual limits: the validation covers this fetch only. feeds are later refreshed by the ingestion
-worker with its own client (app/services/ingest.py), which does not re-check the address.
+Used by the admin form AND by the periodic ingestion (every feed, feeds.yaml included).
+
+Residual limit: getaddrinfo (system_resolver) has no timeout of its own; the 10 s deadline is only checked
+between steps, so a name server that hangs can hold a request longer than that.
 """
 
 import ipaddress
@@ -27,6 +29,7 @@ from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import httpx
 
+from app.services.feed_url import MAX_URL_CHARS
 from app.services.images import is_public_ip, public_host
 
 log = logging.getLogger(__name__)
@@ -34,7 +37,7 @@ log = logging.getLogger(__name__)
 TIMEOUT_SECONDS = 10.0
 MAX_BYTES = 5_000_000
 MAX_REDIRECTS = 5
-MAX_URL_CHARS = 2048
+
 USER_AGENT = "CitizenNewsBot/0.1 (RSS reader)"
 GENERIC_MESSAGE = "Cette adresse est refusée ou injoignable."
 
@@ -153,6 +156,7 @@ def _hop(client: httpx.Client, url: str, resolver: Resolver, max_bytes: int, dea
     target, headers, extensions = _pinned(url, scheme, host, port, _validated_ip(host, port, resolver))
     headers |= {
         "User-Agent": USER_AGENT,
+        "Accept-Encoding": "identity",  # no compressed body: the 5 MB cap is then a cap on what is read, not on a gzip bomb
         "Accept": "application/rss+xml, application/atom+xml, application/xml, text/xml, */*",
     }
     with client.stream("GET", target, headers=headers, extensions=extensions, follow_redirects=False) as response:

@@ -9,19 +9,19 @@ from urllib.parse import urlsplit
 
 import feedparser
 import httpx
-from sqlalchemy import func, literal_column, select
+from sqlalchemy import func, literal, literal_column, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.models.entities import Article, DeletedSource, MediaSource
+from app.services.feed_url import FeedUrlError, normalize_feed_url
 from app.services.images import extract_image_url
+from app.services.safe_fetch import FetchError, Resolver, fetch_public
 from app.services.text import clean_html, truncate
 from config.feeds import FeedConfig, load_feeds
 
 log = logging.getLogger(__name__)
 
-USER_AGENT = "CitizenNewsBot/0.1 (RSS reader)"
-FETCH_TIMEOUT_SECONDS = 15.0
 MAX_FEED_BYTES = 5_000_000
 MAX_TITLE_CHARS = 500
 MAX_SUMMARY_CHARS = 1000
@@ -54,26 +54,36 @@ class IngestReport:
         return [f for f in self.feeds if f.error]
 
 
-def make_client() -> httpx.Client:
-    return httpx.Client(
-        timeout=FETCH_TIMEOUT_SECONDS,
-        follow_redirects=True,
-        headers={"User-Agent": USER_AGENT, "Accept": "application/rss+xml, application/xml, text/xml, */*"},
-    )
+SOURCES_LOCK_KEY = 0x636E5F73  # arbitrary constant shared by sync_sources and delete_source
+
+
+def lock_sources(session: Session) -> None:
+    """Transaction-level advisory lock: seeding and permanent deletion of sources never interleave, so a
+    deletion committed while the seeding runs cannot be undone by it. Released at commit/rollback."""
+    session.execute(select(func.pg_advisory_xact_lock(SOURCES_LOCK_KEY)))
 
 
 def sync_sources(session: Session, feeds: Sequence[FeedConfig]) -> int:
     """Seed media_sources from the config. The DATABASE is the reference: feeds.yaml only adds the feeds
-    that are missing (by feed_url). It never renames a source, never re-activates a deactivated one and
-    never re-creates one an admin deleted for good (deleted_sources). Returns the number of sources added."""
-    deleted = set(session.scalars(select(DeletedSource.feed_url)))
+    that are missing (by normalized feed_url). It never renames a source, never re-activates a deactivated
+    one and never re-creates one an admin deleted for good (deleted_sources). Returns the number added.
+
+    Each insert is one INSERT ... SELECT ... WHERE NOT EXISTS (deleted_sources), taken under the advisory
+    lock that delete_source also takes: no deletion can slip in between the check and the insert."""
+    lock_sources(session)
     added = 0
     for feed in feeds:
-        if feed.feed_url in deleted:
+        try:
+            url = normalize_feed_url(feed.feed_url)
+        except FeedUrlError as exc:
+            log.warning("feed %s ignored: %s", feed.name, exc)
             continue
+        wanted = select(literal(feed.name), literal(url)).where(
+            ~select(DeletedSource.id).where(DeletedSource.feed_url == url).exists()
+        )
         result = session.execute(
             insert(MediaSource)
-            .values(name=feed.name, feed_url=feed.feed_url)
+            .from_select(["name", "feed_url"], wanted)
             .on_conflict_do_nothing(index_elements=["feed_url"])
             .returning(MediaSource.id)
         )
@@ -103,14 +113,6 @@ def parse_feed(content: bytes, now: datetime | None = None) -> list[ParsedArticl
             published = now  # a feed date in the future (clock skew) would hide the article from the window
         articles.setdefault(url, ParsedArticle(url, title, summary, published, extract_image_url(entry, url)))
     return list(articles.values())
-
-
-def fetch_feed(client: httpx.Client, url: str) -> bytes:
-    response = client.get(url)
-    response.raise_for_status()
-    if len(response.content) > MAX_FEED_BYTES:
-        raise ValueError("flux trop volumineux")
-    return response.content
 
 
 def upsert_articles(session: Session, source_id: int, articles: Sequence[ParsedArticle]) -> int:
@@ -149,6 +151,7 @@ def ingest(
     session: Session,
     feeds: Sequence[FeedConfig] | None = None,
     client: httpx.Client | None = None,
+    resolver: Resolver | None = None,
 ) -> IngestReport:
     """Seed missing sources from feeds.yaml, then fetch every ACTIVE source of the database (deactivated
     sources are not fetched; their articles stay). A failing feed is reported and never stops the others."""
@@ -158,23 +161,18 @@ def ingest(
         select(MediaSource.id, MediaSource.name, MediaSource.feed_url).where(MediaSource.active).order_by(MediaSource.id)
     ).all()
     session.commit()
-    own_client = client is None
-    client = client or make_client()
     report = IngestReport()
-    try:
-        for source_id, name, feed_url in sources:
-            result = FeedResult(name, feed_url)
-            report.feeds.append(result)
-            try:
-                articles = parse_feed(fetch_feed(client, feed_url))
-                report.new_articles += upsert_articles(session, source_id, articles)
-                session.commit()
-                result.fetched = len(articles)
-            except Exception as exc:  # one broken feed must not stop the others
-                session.rollback()
-                result.error = f"{type(exc).__name__}: {exc}"[:300]
-                log.warning("feed %s failed: %s", name, result.error)
-    finally:
-        if own_client:
-            client.close()
+    for source_id, name, feed_url in sources:
+        result = FeedResult(name, feed_url)
+        report.feeds.append(result)
+        try:
+            articles = parse_feed(fetch_public(feed_url, client=client, resolver=resolver, max_bytes=MAX_FEED_BYTES))
+            report.new_articles += upsert_articles(session, source_id, articles)
+            session.commit()
+            result.fetched = len(articles)
+        except Exception as exc:  # one broken feed must not stop the others
+            session.rollback()
+            detail = exc.reason if isinstance(exc, FetchError) else str(exc)
+            result.error = f"{type(exc).__name__}: {detail}"[:300]
+            log.warning("feed %s failed: %s", name, result.error)
     return report

@@ -261,3 +261,8 @@ def test_image_urls_refuse_them_too(ip):
     from app.services.images import validate_image_url
 
     assert validate_image_url(f"https://[{ip}]/a.jpg") is None
+
+
+def test_no_compressed_response_is_requested():
+    _, rec = get("https://news.example/rss", {"news.example/rss": httpx.Response(200, content=b"x")})
+    assert rec.requests[0].headers["accept-encoding"] == "identity"
