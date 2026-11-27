@@ -15,7 +15,7 @@ from config.settings import get_settings
 from app.services.clustering import cluster
 from app.services.aggregation import aggregate
 from app.services.demo import seed_demo
-from app.services.edition_calendar import edition_state, pending_editions
+from app.services.edition_calendar import edition_state, target_edition
 from app.services.edition_close import close_due_edition
 from app.services.ingest import ingest
 
@@ -62,7 +62,7 @@ def run_seed_demo(seed: int = 1) -> int:
 
 
 def run_close(dry_run: bool = False, now: datetime | None = None) -> int:
-    """Publish the most recent due edition (dry run: print the ranking, publish nothing)."""
+    """Publish the target due edition (`target_edition`) (dry run: print the ranking, publish nothing)."""
     now = now or datetime.now(UTC)
     with Session(get_engine()) as session:
         if not dry_run:
@@ -70,8 +70,8 @@ def run_close(dry_run: bool = False, now: datetime | None = None) -> int:
             if edition is None:
                 log.info("clôture : aucune édition à publier")
             return 0
-        pending = pending_editions(session, now)
-        target = pending[-1] if pending else edition_state(session, now).edition_date
+        pending = target_edition(session, now)  # what the closing would publish now
+        target = pending or edition_state(session, now).edition_date
         result = aggregate(session, target, now)
     print(f"édition {target} ({'due' if pending else 'pas encore due'}) : {result.participants} participants, {len(result.ranking)} sujets classés")
     for t in result.ranking:

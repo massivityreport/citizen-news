@@ -5,8 +5,12 @@ Closing is at EDITION_HOUR:00 local time; zoneinfo handles daylight saving (17:0
 summer, 16:00 UTC in winter).
 
 Rules (`today` = local date of `now`):
-- A due (closing passed) edition is not published: the target is the OLDEST such edition, NOT open (publication
-  period, even if the worker is late by hours or days; its unes stay readable). Once it is published the next applies.
+- A due (closing passed) edition is not published: the target is `pick_target` of the pending (due, unpublished)
+  dates, NOT open (publication period, even if the worker is late by hours or days; its unes stay readable):
+  the OLDEST pending date that has recorded unes (a day with unes is never skipped: it is published in its turn,
+  one per tick), else the MOST RECENT pending date (an empty edition; the missed days before it have no ghost
+  edition). Once it is published the calendar keys on it: the earlier dates without unes are no longer pending.
+  ONE rule (`target_edition`) for the calendar state, the admin preview, the approvals and the closing.
   Before the very first edition, a due date counts only if citizens recorded a une for it (no ghost edition).
 - Nothing pending, edition for `today` published: target = tomorrow, open, closing tomorrow.
 - Nothing pending, none for `today`: target = today, open until the closing time.
@@ -60,16 +64,25 @@ def due_unpublished(now: datetime, last_published: date | None, selection_dates:
     return [d for d in candidates if closing_time(d) <= now]
 
 
+def pick_target(pending: list[date], selection_dates: Iterable[date] = ()) -> date:
+    """The edition to publish among the pending dates (oldest first, not empty): the oldest one with unes,
+    else the most recent one."""
+    recorded = set(selection_dates)
+    return next((d for d in pending if d in recorded), pending[-1])
+
+
 def compute_state(now: datetime, last_published: date | None = None, selection_dates: Iterable[date] = ()) -> EditionState:
     """Pure calendar computation (`last_published`: date of the latest published edition, if any).
 
-    The target is the OLDEST pending (due, unpublished) edition: closed, its recorded unes stay readable and
-    nothing can be written, until it is published; then the next one applies. With nothing pending: an edition
-    already published for today -> tomorrow, open; else today, open until the closing time.
+    The target is `pick_target` of the pending editions: closed, its recorded unes stay readable and nothing can
+    be written, until it is published; then the next one applies. With nothing pending: an edition already
+    published for today -> tomorrow, open; else today, open until the closing time.
     """
+    selection_dates = list(selection_dates)
     pending = due_unpublished(now, last_published, selection_dates)
     if pending:
-        return EditionState(pending[0], closing_time(pending[0]), False)
+        target = pick_target(pending, selection_dates)
+        return EditionState(target, closing_time(target), False)
     today = _today(now)
     if last_published is not None and last_published >= today:
         target = today + timedelta(days=1)
@@ -78,24 +91,36 @@ def compute_state(now: datetime, last_published: date | None = None, selection_d
     return EditionState(today, closes_at, now < closes_at)
 
 
-def _published_and_selections(session: Session, now: datetime) -> tuple[date | None, list[date]]:
+def _calendar(session: Session, now: datetime) -> tuple[date | None, list[date], list[date]]:
+    """(last published date, pending dates oldest first, dates with recorded unes among the candidates)."""
     last = session.scalar(select(func.max(Edition.edition_date)))
-    dates: list[date] = []
     if last is None:
         dates = list(session.scalars(select(Selection.edition_date).where(Selection.edition_date <= _today(now)).distinct()))
-    return last, dates
+        return last, due_unpublished(now, None, dates), dates
+    pending = due_unpublished(now, last)
+    dates = []
+    if len(pending) > 1:  # only then the choice matters: one more query
+        dates = list(session.scalars(select(Selection.edition_date).where(Selection.edition_date.in_(pending)).distinct()))
+    return last, pending, dates
 
 
 def pending_editions(session: Session, now: datetime | None = None) -> list[date]:
-    """Due, unpublished edition dates, oldest first (what the closing has to publish)."""
-    now = now or datetime.now(UTC)
-    return due_unpublished(now, *_published_and_selections(session, now))
+    """Due, unpublished edition dates, oldest first (the candidates of the closing)."""
+    return _calendar(session, now or datetime.now(UTC))[1]
+
+
+def target_edition(session: Session, now: datetime | None = None) -> date | None:
+    """THE edition the closing publishes now (None: nothing is due). Also what the admin preview and the
+    approvals show while it is pending."""
+    _, pending, dates = _calendar(session, now or datetime.now(UTC))
+    return pick_target(pending, dates) if pending else None
 
 
 def edition_state(session: Session, now: datetime | None = None) -> EditionState:
-    """State of the edition in progress at `now` (default: the real clock). One or two queries."""
+    """State of the edition in progress at `now` (default: the real clock). One to three queries."""
     now = now or datetime.now(UTC)
-    return compute_state(now, *_published_and_selections(session, now))
+    last, _, dates = _calendar(session, now)
+    return compute_state(now, last, dates)
 
 
 def next_close_at(now: datetime) -> datetime:

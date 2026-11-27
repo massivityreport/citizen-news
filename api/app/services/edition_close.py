@@ -1,9 +1,10 @@
 """Closing: publish the most recent due edition, frozen, in ONE transaction.
 
 `close_due_edition(session, now)` is called every minute by the worker (and by `close-edition`). It
-- lists the due, unpublished edition dates (`pending_editions`) and publishes only the MOST RECENT one: the days a
-  stopped worker missed produce no ghost editions (the calendar then moves on, since it keys on the latest
-  published date),
+- publishes `target_edition` (the same rule as the calendar and the admin preview): the oldest due edition that has
+  recorded unes, else the most recent due one. A day with unes is never skipped (one edition per tick until caught
+  up); the empty days a stopped worker missed produce no ghost editions (the calendar keys on the latest published
+  date, so those before it are no longer pending),
 - takes a transaction-scoped advisory lock, then looks again: two workers at the same time give one edition
   (the loser finds it published and does nothing; the unique constraint on editions.edition_date is the last
   safety net),
@@ -20,7 +21,7 @@ from sqlalchemy.orm import Session
 
 from app.models.entities import Edition, EditionTopic
 from app.services.aggregation import aggregate
-from app.services.edition_calendar import pending_editions
+from app.services.edition_calendar import target_edition
 
 log = logging.getLogger("app.close")
 LOCK_KEY = 0x434E4544  # "CNED": advisory lock of the closing
@@ -28,17 +29,16 @@ LOCK_KEY = 0x434E4544  # "CNED": advisory lock of the closing
 
 def close_due_edition(session: Session, now: datetime) -> Edition | None:
     """The edition published by this call, or None (nothing due, or someone else published it first)."""
-    if not pending_editions(session, now):
+    if target_edition(session, now) is None:
         session.rollback()  # the common case, every minute: no lock, no transaction left open
         return None
     target = None
     try:
         session.execute(select(func.pg_advisory_xact_lock(LOCK_KEY)))
-        pending = pending_editions(session, now)  # again, under the lock: another worker may have published
-        if not pending:
+        target = target_edition(session, now)  # again, under the lock: another worker may have published
+        if target is None:
             session.rollback()
             return None
-        target = pending[-1]  # the most recent due one; the missed days before it stay unpublished
         result = aggregate(session, target, now)
         edition = Edition(edition_date=target, published_at=now, participants=result.participants)
         session.add(edition)
