@@ -40,6 +40,23 @@ export function installMocks() {
     const route = `${method} ${path}`;
 
     switch (route) {
+      case "GET /admin/me":
+        return json(200, { authenticated: true });
+      case "GET /admin/edition/preview": {
+        const item = (rank: number, over: Record<string, unknown> = {}) => ({
+          rank, topic_id: rank, title: `Sujet de démonstration n° ${rank}`, approvals: 60 - rank * 3, proportion: (60 - rank * 3) / 100,
+          source_count: 2 + (rank % 4), article_count: 4 + rank, updated_at: new Date(Date.now() - rank * 1_800_000).toISOString(),
+          tied_with: [] as number[], broken_by: null as string | null, ...over,
+        });
+        const topics = Array.from({ length: 10 }, (_, i) => item(i + 1));
+        topics[9] = item(10, { approvals: 30, proportion: 0.3, tied_with: [11], broken_by: "updated_at" });
+        const next = Array.from({ length: 10 }, (_, i) => item(i + 11));
+        next[0] = item(11, { approvals: 30, proportion: 0.3, tied_with: [10], broken_by: "updated_at" });
+        return json(200, {
+          computed_at: new Date().toISOString(), edition_date: new Date().toISOString().slice(0, 10), participants: 100, topics, next,
+          ties: [{ approvals: 30, topic_ids: [10, 11], broken_by: "updated_at", crosses_cut: true }],
+        });
+      }
       case "GET /edition/current": {
         // Fermeture dans 2 h : le compte à rebours bouge sous les yeux. ?mock=vide : aucune édition publiée.
         const none = new URLSearchParams(window.location.search).get("mock") === "vide";

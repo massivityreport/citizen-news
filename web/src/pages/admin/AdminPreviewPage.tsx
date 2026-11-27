@@ -99,7 +99,7 @@ function Result({ data }: { data: AdminPreview }) {
       <Ties ties={data.ties} titles={titles} />
 
       <div className={styles.cut} role="separator" aria-label="Coupure : en dessous, les sujets ne seraient pas publiés">
-        <span>✂ Coupure — en dessous, hors de la une</span>
+        <span>Coupure — en dessous, hors de la une</span>
       </div>
 
       <h2 id="suivants">Rangs 11 à 20</h2>
