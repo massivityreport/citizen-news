@@ -18,6 +18,10 @@ const HINTS: Record<SwipeDirection, string> = {
   down: "▼ Retirer de ma une",
 };
 
+function prefersReducedMotion(): boolean {
+  return typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
 /**
  * Un sujet à la fois. Gestes (glisser gauche/droite/haut/bas) et flèches du clavier appellent les mêmes actions
  * que les boutons de la barre. Vertical : réservé au geste tant que le contenu de la carte tient dans l'espace ;
@@ -51,6 +55,7 @@ export function Carousel({
   }
 
   const { handlers, drag } = useSwipe(run);
+  const reducedMotion = prefersReducedMotion();
 
   // Le contenu dépasse-t-il ? Alors la zone de contenu garde le défilement vertical natif.
   useEffect(() => {
@@ -65,7 +70,9 @@ export function Carousel({
   }, [topic.id]);
 
   function onKeyDown(e: KeyboardEvent<HTMLDivElement>) {
-    if (e.target !== e.currentTarget || e.altKey || e.ctrlKey || e.metaKey) return;
+    if (e.altKey || e.ctrlKey || e.metaKey) return;
+    // Le focus peut être n'importe où dans le carrousel, sauf là où les flèches ont déjà un sens.
+    if ((e.target as HTMLElement).closest('input, select, textarea, [role="tablist"], [contenteditable="true"]')) return;
     const direction: Record<string, SwipeDirection> = { ArrowLeft: "right", ArrowRight: "left", ArrowUp: "up", ArrowDown: "down" };
     const d = direction[e.key];
     if (!d) return;
@@ -73,7 +80,8 @@ export function Carousel({
     run(d);
   }
 
-  const style = drag
+  // Mouvement réduit : la carte ne suit plus le doigt ; l'étiquette du geste suffit comme retour.
+  const style = drag && !reducedMotion
     ? { transform: drag.axis === "x" ? `translateX(${drag.dx * 0.6}px)` : `translateY(${drag.dy * 0.4}px)`, transition: "none" }
     : undefined;
 

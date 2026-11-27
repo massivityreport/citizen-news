@@ -70,9 +70,11 @@ export function installMocks() {
         // Jeton à usage unique : tout jeton non vide est accepté, sauf « expire » (rejoue le cas 400).
         if (!body?.token || body.token === "expire") return json(400, { detail: "Lien invalide ou expiré." });
         session = "demo@example.org";
+        uneIds = [];
         return json(200, { email: session });
       case "POST /auth/logout":
         session = null;
+        uneIds = [];
         return json(204);
       case "GET /topics/pool": {
         const tab = url.searchParams.get("tab") ?? "random";

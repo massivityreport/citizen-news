@@ -79,6 +79,29 @@ describe("Carousel : gestes", () => {
     expect(a.onNext).toHaveBeenCalled();
   });
 
+  it("mouvement réduit : la carte ne suit pas le doigt, le retour reste visible", () => {
+    vi.stubGlobal("matchMedia", (q: string) => ({ matches: q.includes("reduce"), media: q, addEventListener() {}, removeEventListener() {} }));
+    const { surface } = setup();
+    fireEvent.pointerDown(surface, { pointerId: 1, clientX: 200, clientY: 300, isPrimary: true, pointerType: "touch" });
+    fireEvent.pointerMove(surface, { pointerId: 1, clientX: 100, clientY: 300, pointerType: "touch" });
+    expect(surface.firstElementChild).not.toHaveAttribute("style");
+    expect(screen.getByText(/Suivant ›/, { selector: "p" })).toBeInTheDocument();
+    vi.unstubAllGlobals();
+  });
+
+  it("flèches aussi quand le focus est sur un lien de la carte, mais pas dans un champ", async () => {
+    const user = userEvent.setup();
+    const { a } = setup();
+    screen.getByRole("link", { name: /Le Monde/ }).focus();
+    await user.keyboard("{ArrowRight}");
+    expect(a.onNext).toHaveBeenCalledTimes(1);
+    const input = document.createElement("input");
+    screen.getByRole("group", { name: /Sujets à explorer/ }).appendChild(input);
+    input.focus();
+    await user.keyboard("{ArrowRight}");
+    expect(a.onNext).toHaveBeenCalledTimes(1);
+  });
+
   it("équivalents clavier : flèches", async () => {
     const user = userEvent.setup();
     const { a, surface } = setup();
