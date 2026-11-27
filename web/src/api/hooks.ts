@@ -189,3 +189,38 @@ export const adminStatsKey = ["admin", "stats"] as const;
 export function useAdminStats() {
   return useQuery({ queryKey: adminStatsKey, queryFn: api.adminStats, staleTime: 60_000, refetchOnWindowFocus: false });
 }
+
+
+// Avis (backoffice). Le compteur de non lus vit sous sa propre clé : l'onglet l'affiche sur toutes les pages admin.
+export const adminFeedbackKey = ["admin", "feedback"] as const;
+export const adminFeedbackUnreadKey = ["admin", "feedback-unread"] as const;
+
+export function useAdminFeedback(params: Record<string, string>) {
+  return useQuery({ queryKey: [...adminFeedbackKey, "list", params], queryFn: () => api.adminFeedback(params), placeholderData: keepPreviousData });
+}
+
+export function useAdminFeedbackUnread() {
+  return useQuery({ queryKey: adminFeedbackUnreadKey, queryFn: api.adminFeedbackUnread, refetchOnWindowFocus: true });
+}
+
+export function useAdminFeedbackItem(id: number) {
+  return useQuery({ queryKey: [...adminFeedbackKey, "item", id], queryFn: () => api.adminFeedbackItem(id) });
+}
+
+function useRefreshFeedback() {
+  const qc = useQueryClient();
+  return () => Promise.all([qc.invalidateQueries({ queryKey: adminFeedbackKey }), qc.invalidateQueries({ queryKey: adminFeedbackUnreadKey })]);
+}
+
+export function useSetFeedbackRead() {
+  const refresh = useRefreshFeedback();
+  return useMutation({
+    mutationFn: ({ id, read }: { id: number; read: boolean }) => api.adminFeedbackSetRead(id, read),
+    onSettled: refresh,
+  });
+}
+
+export function useDeleteFeedback() {
+  const refresh = useRefreshFeedback();
+  return useMutation({ mutationFn: (id: number) => api.adminFeedbackDelete(id), onSettled: refresh });
+}

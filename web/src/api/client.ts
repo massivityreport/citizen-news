@@ -1,5 +1,7 @@
 import type {
   AdminArticle,
+  AdminFeedbackDetail,
+  AdminFeedbackPage,
   AdminSource,
   AdminPreview,
   AdminStats,
@@ -177,6 +179,17 @@ export const api = {
   adminEditions: (params: Record<string, string>) => request<Page<EditionSummary>>(`/admin/editions${query(params)}`),
 
   adminEdition: (date: string) => request<Edition>(`/admin/editions/${encodeURIComponent(date)}`),
+
+  adminFeedback: (params: Record<string, string>) => request<AdminFeedbackPage>(`/admin/feedback${query(params)}`),
+
+  adminFeedbackUnread: () => request<{ unread_count: number }>("/admin/feedback/unread-count"),
+
+  adminFeedbackItem: (id: number) => request<AdminFeedbackDetail>(`/admin/feedback/${id}`),
+
+  adminFeedbackSetRead: (id: number, read: boolean) =>
+    request<AdminFeedbackDetail>(`/admin/feedback/${id}/${read ? "read" : "unread"}`, { method: "POST" }),
+
+  adminFeedbackDelete: (id: number) => request<void>(`/admin/feedback/${id}`, { method: "DELETE" }),
 
   adminPreview: () => request<AdminPreview>("/admin/edition/preview"),
 };

@@ -226,3 +226,36 @@ export interface RecentAction {
   page?: string;
   topic_id?: number;
 }
+
+/** Une ligne de la liste des avis (backoffice). `answered` reste faux tant que les réponses n'existent pas. */
+export interface AdminFeedbackItem {
+  id: number;
+  created_at: string;
+  kind: FeedbackKind;
+  email: string;
+  page_name: string;
+  page_url: string;
+  excerpt: string;
+  is_read: boolean;
+  answered: boolean;
+}
+
+export interface AdminFeedbackPage extends Page<AdminFeedbackItem> {
+  unread_count: number;
+}
+
+export interface AdminFeedbackDetail {
+  id: number;
+  created_at: string;
+  kind: FeedbackKind;
+  email: string;
+  message: string;
+  page_name: string;
+  page_url: string;
+  screen: string;
+  browser: string;
+  /** Le parcours récent, null si le visiteur ne l'a pas joint. */
+  recent_actions: RecentAction[] | null;
+  is_read: boolean;
+  answered: boolean;
+}
