@@ -114,38 +114,79 @@ describe("Composer avec compte", () => {
   });
 });
 
-describe("Composer : fusion du brouillon local", () => {
-  it("propose la fusion, appelle POST /merge, vide le brouillon et le dit", async () => {
-    draftStore.set({ editionDate: "2026-11-27", ids: [2, 3] });
-    const fn = mount({
-      une: une([1]),
-      routes: { "POST /api/me/une/merge": () => res(200, { added: 1, ignored: 1, une: une([1, 2]) }) },
-    });
+describe("Composer : fusion automatique du brouillon local", () => {
+  const MERGE = "POST /api/me/une/merge";
+
+  it("à la connexion, fusionne seul (une fois, sans ce qui est déjà dans la une), le dit et vide le brouillon", async () => {
+    draftStore.set({ editionDate: "2026-11-27", ids: [1, 2, 3] });
+    const fn = mount({ une: une([1]), routes: { [MERGE]: () => res(200, { added: 1, ignored: 1, une: une([1, 2]) }) } });
     await heading(1);
-    expect(await screen.findByText(/Un brouillon de 2 sujets est resté sur cet appareil/)).toBeInTheDocument();
-    await click("Fusionner");
-    expect(await screen.findByText(/Brouillon fusionné : 1 sujet ajouté, 1 ignoré/)).toBeInTheDocument();
-    expect(bodiesOf(fn, "POST /api/me/une/merge")).toEqual([{ topic_ids: [2, 3] }]);
+    expect(await screen.findByText(/1 sujet ajouté à votre une, 1 ignoré/)).toBeInTheDocument();
+    expect(bodiesOf(fn, MERGE)).toEqual([{ topic_ids: [2, 3] }]);
     expect(draftStore.get().ids).toEqual([]);
     expect(screen.getByRole("progressbar", { name: "2/10 sujets" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Fusionner" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /fusion/i })).not.toBeInTheDocument();
   });
 
-  it("« Supprimer le brouillon » l'efface sans appel", async () => {
+  it("tout est déjà dans la une : aucun appel, brouillon vidé", async () => {
+    draftStore.set({ editionDate: "2026-11-27", ids: [1] });
+    const fn = mount({ une: une([1]) });
+    await heading(1);
+    await waitFor(() => expect(draftStore.get().ids).toEqual([]));
+    expect(bodiesOf(fn, MERGE)).toEqual([]);
+  });
+
+  it("échec réseau : le brouillon reste, reprise manuelle, un seul envoi même au double clic", async () => {
     draftStore.set({ editionDate: "2026-11-27", ids: [2] });
-    const fn = mount({ une: une([]) });
+    let fail = true;
+    let release: (r: Response) => void = () => {};
+    const fn = mount({
+      une: une([]),
+      routes: {
+        [MERGE]: () => (fail ? res(500, { detail: "Panne." }) : new Promise<Response>((r) => (release = r))),
+      },
+    });
+    await heading(1);
+    const retry = await screen.findByRole("button", { name: "Réessayer la fusion" });
+    expect(draftStore.get().ids).toEqual([2]);
+    expect(bodiesOf(fn, MERGE)).toHaveLength(1); // l'envoi automatique n'est pas rejoué
+    fail = false;
+    await userEvent.dblClick(retry);
+    expect(bodiesOf(fn, MERGE)).toHaveLength(2);
+    release(res(200, { added: 1, ignored: 0, une: une([2]) }));
+    expect(await screen.findByText(/1 sujet ajouté à votre une/)).toBeInTheDocument();
+    expect(draftStore.get().ids).toEqual([]);
+  });
+
+  it("« Supprimer le brouillon » après un échec l'efface sans nouvel appel", async () => {
+    draftStore.set({ editionDate: "2026-11-27", ids: [2] });
+    const fn = mount({ une: une([]), routes: { [MERGE]: () => res(500, { detail: "x" }) } });
     await heading(1);
     await userEvent.click(await screen.findByRole("button", { name: "Supprimer le brouillon" }));
     expect(draftStore.get().ids).toEqual([]);
-    expect(bodiesOf(fn, "POST /api/me/une/merge")).toEqual([]);
+    expect(bodiesOf(fn, MERGE)).toHaveLength(1);
   });
 
-  it("une fermée : pas de proposition de fusion", async () => {
+  it("une fermée : pas de fusion", async () => {
     draftStore.set({ editionDate: "2026-11-27", ids: [2] });
-    mount({ une: une([], { open: false }), closed: true });
+    const fn = mount({ une: une([], { open: false }), closed: true });
     await heading(1);
-    await screen.findByText("Enregistrée");
-    expect(screen.queryByRole("button", { name: "Fusionner" })).not.toBeInTheDocument();
+    await saved();
+    expect(bodiesOf(fn, MERGE)).toEqual([]);
+    expect(draftStore.get().ids).toEqual([2]);
+  });
+});
+
+describe("Sujet de la une absent du bassin", () => {
+  it("le dit clairement et permet de le retirer", async () => {
+    mount({ une: une([99]), routes: { "DELETE /api/me/une/topics/99": () => res(200, une([])) } });
+    await heading(1);
+    await saved();
+    expect(within(screen.getByRole("list", { name: /Aperçu/ })).getAllByRole("listitem")[0]).toHaveTextContent("Ce sujet n’est plus au bassin du jour");
+    await click("Revoir et valider");
+    expect(within(review()).getByRole("heading", { level: 3 })).toHaveTextContent("Ce sujet n’est plus au bassin du jour");
+    await click(/Retirer la place 1/);
+    await waitFor(() => expect(screen.getByText(/0\/10 sujets dans votre une/)).toBeInTheDocument());
   });
 });
 

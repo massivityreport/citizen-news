@@ -114,12 +114,12 @@ describe("Vérification du lien", () => {
     expect(screen.getByText(/1 autre sujet a été ignoré/)).toBeInTheDocument();
   });
 
-  it("brouillon fusionné : vide le brouillon local de ce navigateur", async () => {
-    draftStore.set({ editionDate: "2026-11-27", ids: [4, 5] });
+  it("brouillon fusionné : le brouillon local n'est pas perdu (la fusion se fait sur /composer)", async () => {
+    draftStore.set({ editionDate: "2026-11-27", ids: [4, 5, 8] });
     session({ "POST /api/auth/verify": () => res(200, { email: EMAIL, draft: { added: 2, ignored: 0 } }) });
     renderLogin("/connexion?token=t");
     await screen.findByText(/2 sujets ont été ajoutés/);
-    expect(draftStore.get().ids).toEqual([]);
+    expect(draftStore.get().ids).toEqual([4, 5, 8]);
   });
 
   it("sans brouillon joint : le brouillon local reste (fusion proposée sur /composer)", async () => {

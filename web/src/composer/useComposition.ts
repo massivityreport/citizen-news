@@ -148,29 +148,70 @@ export function useComposition(meta: EditionMeta | undefined, poolIds?: Readonly
     [write],
   );
 
-  /** Brouillon local en attente de fusion (connecté, une ouverte). */
-  const pendingDraft = mode === "server" ? localIds : [];
+  /** Brouillon local en attente de fusion : connecté, ids pas déjà dans la une. */
+  const pendingDraft = mode === "server" ? localIds.filter((id) => !ids.includes(id)) : [];
 
-  /** POST /api/me/une/merge, puis vide le brouillon local. */
-  const mergeDraft = useCallback(async (): Promise<Result & { added?: number; ignored?: number }> => {
-    const d = draftStore.get().ids;
+  const merging = useRef(false);
+  const [mergeBusy, setMergeBusy] = useState(false);
+  const [mergeFailed, setMergeFailed] = useState(false);
+  const [mergeNote, setMergeNote] = useState<string | null>(null);
+
+  /**
+   * POST /api/me/une/merge avec le brouillon local (sans ce qui est déjà dans la une), puis vide le brouillon
+   * SEULEMENT après succès. Un seul appel à la fois (double clic, StrictMode) ; en cas d'échec, le brouillon reste.
+   */
+  const mergeDraft = useCallback(async (): Promise<Result> => {
+    if (merging.current) return { outcome: "unavailable" };
+    const d = draftStore.get();
+    const inUne = qc.getQueryData<Une>(uneKey)?.topic_ids ?? [];
+    const toMerge = d.ids.filter((id) => !inUne.includes(id));
+    if (toMerge.length === 0) {
+      draftStore.clear(); // rien à fusionner : tout est déjà dans la une
+      return { outcome: "absent" };
+    }
+    merging.current = true;
+    setMergeBusy(true);
+    setMergeFailed(false);
     try {
-      const res = await api.uneMerge(d);
+      const res = await api.uneMerge(toMerge);
       qc.setQueryData(uneKey, res.une);
       draftStore.clear();
-      return { outcome: "added", added: res.added, ignored: res.ignored };
+      const n = res.added;
+      const g = res.ignored;
+      setMergeNote(
+        `${n} sujet${n > 1 ? "s ajoutés" : " ajouté"} à votre une${g > 0 ? `, ${g} ignoré${g > 1 ? "s" : ""} (une complète ou sujet plus au bassin)` : ""}.`,
+      );
+      return { outcome: "added" };
     } catch (e) {
       if (e instanceof ApiError && e.status === 409 && CLOSED_RE.test(e.message)) {
-        setClosedFor(editionDate);
+        setClosedFor(qc.getQueryData<Une>(uneKey)?.edition_date ?? null);
         return { outcome: "closed", message: e.message };
       }
+      setMergeFailed(true);
       if (e instanceof ApiError && e.status === 401) {
         qc.setQueryData(meKey, null);
         return { outcome: "unauthorized", message: e.message };
       }
       return { outcome: "error", message: e instanceof ApiError ? e.message : "Le réseau ne répond pas. Réessayez." };
+    } finally {
+      merging.current = false;
+      setMergeBusy(false);
     }
-  }, [qc, editionDate]);
+  }, [qc]);
+
+  // Fusion automatique, une fois par connexion (par e-mail) : jamais deux envois, même en StrictMode.
+  const email = me.data?.email ?? null;
+  const autoFor = useRef<string | null>(null);
+  const hasDraft = draft.ids.length > 0;
+  useEffect(() => {
+    if (mode !== "server") {
+      autoFor.current = null;
+      return;
+    }
+    if (!ready || closed || !email || !hasDraft || autoFor.current === email) return;
+    autoFor.current = email;
+    void mergeDraft();
+  }, [mode, ready, closed, email, hasDraft, mergeDraft]);
 
   return {
     mode,
@@ -188,8 +229,12 @@ export function useComposition(meta: EditionMeta | undefined, poolIds?: Readonly
     remove,
     replace,
     pendingDraft,
+    mergeBusy,
+    /** L'envoi automatique a échoué : le brouillon est resté, la reprise est manuelle. */
+    mergeFailed,
+    mergeNote,
     mergeDraft,
     discardDraft: () => draftStore.clear(),
-    email: me.data?.email ?? null,
+    email,
   };
 }

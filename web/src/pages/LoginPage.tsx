@@ -3,7 +3,6 @@ import { Link, useLocation, useNavigate, useSearchParams } from "react-router-do
 import { useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../api/client";
 import { meKey, uneKey, useLogout, useMe } from "../api/hooks";
-import { draftStore } from "../lib/draftStore";
 import { usePageTitle } from "../components/usePageTitle";
 import styles from "./LoginPage.module.css";
 
@@ -16,14 +15,14 @@ function internalPath(value: unknown): string | null {
   return typeof value === "string" && /^\/(?![/\\])/.test(value) ? value : null;
 }
 
-const plural = (n: number, one: string, many: string) => (n > 1 ? many : one);
+const pick = (n: number, one: string, many: string) => (n > 1 ? many : one);
 
 /** Le brouillon de une attaché au lien (contrat V2) est fusionné par le serveur : on le dit simplement. */
 function doneMessage(draft: { added: number; ignored: number } | null | undefined): string {
   if (!draft) return "Vous êtes connecté·e.";
-  const ignored = draft.ignored > 0 ? ` ${draft.ignored} ${plural(draft.ignored, "autre sujet a été ignoré", "autres sujets ont été ignorés")} (une complète ou sujet plus disponible).` : "";
+  const ignored = draft.ignored > 0 ? ` ${draft.ignored} ${pick(draft.ignored, "autre sujet a été ignoré", "autres sujets ont été ignorés")} (une complète ou sujet plus disponible).` : "";
   if (draft.added === 0) return `Vous êtes connecté·e. Votre brouillon n’a rien ajouté : ses sujets étaient déjà dans votre une.${ignored}`;
-  return `Vous êtes connecté·e. ${draft.added} ${plural(draft.added, "sujet a été ajouté", "sujets ont été ajoutés")} à votre une.${ignored}`;
+  return `Vous êtes connecté·e. ${draft.added} ${pick(draft.added, "sujet a été ajouté", "sujets ont été ajoutés")} à votre une.${ignored}`;
 }
 
 type Phase =
@@ -69,8 +68,7 @@ export default function LoginPage() {
       await qc.cancelQueries({ queryKey: meKey });
       qc.setQueryData(meKey, { email: user.email });
       void qc.invalidateQueries({ queryKey: uneKey });
-      // Le serveur a fusionné le brouillon joint au lien : celui de ce navigateur est devenu inutile.
-      if (user.draft) draftStore.clear();
+      // Le brouillon local n'est pas touché ici : la page /composer fusionne ce qui n'est pas déjà dans la une.
       setPhase({ kind: "done", message: doneMessage(user.draft) });
     })();
   }, [token, qc]);
@@ -212,7 +210,7 @@ function MagicLinkForm() {
         const s = e.retryAfter;
         setFormError(
           s
-            ? `Vous avez demandé trop de liens. Merci de patienter ${s} ${plural(s, "seconde", "secondes")} avant de réessayer.`
+            ? `Vous avez demandé trop de liens. Merci de patienter ${s} ${pick(s, "seconde", "secondes")} avant de réessayer.`
             : "Vous avez demandé trop de liens. Merci de patienter un instant avant de réessayer.",
         );
         setWait(s ?? 30);

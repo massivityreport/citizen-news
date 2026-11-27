@@ -52,7 +52,7 @@ export function ReviewPanel({
             <li key={`place-${id}`} className={styles.item}>
               <h3>
                 <span>Place {i + 1} : </span>
-                {t ? t.title : "Sujet qui n’est plus disponible"}
+                {t ? t.title : "Ce sujet n’est plus au bassin du jour"}
               </h3>
               {t?.summary && <p>{t.summary}</p>}
               {!closed && (

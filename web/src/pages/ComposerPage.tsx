@@ -86,7 +86,7 @@ export default function ComposerPage() {
   }, [tab, topicId]);
 
   const inUneSet = useMemo(() => new Set(comp.ids), [comp.ids]);
-  const titles = comp.ids.map((id) => known.get(id)?.title ?? "Sujet indisponible");
+  const titles = comp.ids.map((id) => known.get(id)?.title ?? "Ce sujet n’est plus au bassin du jour");
   const readOnly = comp.closed || !comp.ready;
   const closes = comp.closesAt;
   const replaceTarget = replacing && comp.ids[replacing.place - 1] === replacing.id ? replacing : null;
@@ -157,22 +157,13 @@ export default function ComposerPage() {
 
   async function mergeDraft() {
     const r = await comp.mergeDraft();
-    if (r.outcome === "added") {
-      const a = r.added ?? 0;
-      const g = r.ignored ?? 0;
-      setNotice({
-        kind: "merge",
-        text: `Brouillon fusionné : ${a} sujet${a > 1 ? "s ajoutés" : " ajouté"}${g > 0 ? `, ${g} ignoré${g > 1 ? "s" : ""} (une complète ou sujet indisponible)` : ""}.`,
-      });
-      setStatus("Brouillon fusionné avec votre une.");
-    } else if (r.outcome === "closed") {
-      setStatus("La clôture est passée : le brouillon n’a pas pu être fusionné.");
-    } else {
+    if (r.outcome === "added") setStatus("Brouillon fusionné avec votre une.");
+    else if (r.outcome === "closed") setStatus("La clôture est passée : le brouillon n’a pas pu être fusionné.");
+    else if (r.outcome === "error" || r.outcome === "unauthorized")
       setNotice({ kind: "error", text: r.message ?? "La fusion a échoué. Réessayez." });
-    }
   }
 
-  const showDraftOffer = comp.mode === "server" && comp.ready && !comp.closed && comp.pendingDraft.length > 0;
+  const showDraftOffer = comp.mode === "server" && comp.ready && !comp.closed && comp.mergeFailed && comp.pendingDraft.length > 0;
 
   if (view === "review") {
     return (
@@ -268,14 +259,24 @@ export default function ComposerPage() {
           </button>
         </div>
       )}
+      {comp.mergeBusy && (
+        <p className={styles.notice} role="status">
+          Fusion de votre brouillon avec votre une…
+        </p>
+      )}
+      {comp.mergeNote && (
+        <p className={styles.notice} role="status">
+          {comp.mergeNote}
+        </p>
+      )}
       {showDraftOffer && (
         <div className={styles.notice} role="group" aria-label="Brouillon de cet appareil">
           <p className={styles.noticeText}>
-            Un brouillon de {comp.pendingDraft.length} sujet{comp.pendingDraft.length > 1 ? "s" : ""} est resté sur cet appareil. Le
-            fusionner avec votre une ?
+            La fusion de votre brouillon ({comp.pendingDraft.length} sujet{comp.pendingDraft.length > 1 ? "s" : ""}) n’a pas abouti. Il
+            est resté sur cet appareil : réessayer ?
           </p>
-          <button type="button" className={styles.btn} onClick={() => void mergeDraft()}>
-            Fusionner
+          <button type="button" className={styles.btn} onClick={() => void mergeDraft()} disabled={comp.mergeBusy}>
+            {comp.mergeBusy ? "Fusion…" : "Réessayer la fusion"}
           </button>
           <button type="button" className={`${styles.btn} ${styles.btnLight}`} onClick={comp.discardDraft}>
             Supprimer le brouillon
