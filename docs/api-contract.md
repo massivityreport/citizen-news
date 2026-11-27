@@ -158,6 +158,43 @@ Requête : `{"password": "…"}` (1024 caractères au plus).
 
 - `200` → `{"authenticated": true}` · `401` sans session valide.
 
+### Sources (`/api/admin/sources`)
+
+Les sources médias sont gérées en base : **la base est la référence**, `api/config/feeds.yaml` ne sert qu'à l'initialiser (voir `api/README.md`). Toutes ces routes exigent une session admin (`401` sinon, y compris avec une session citoyenne). Source :
+
+```json
+{ "id": 3, "name": "Le Monde", "feed_url": "https://…/rss.xml", "active": true, "article_count": 42, "last_article_at": "2026-11-26T09:30:00Z" }
+```
+
+`last_article_at` : `string | null`, le plus récent des articles de la source, par `published_at`, ou `fetched_at` (date de récupération) pour un article sans date, comme le regroupement ; `null` sans article. `article_count` compte tous les articles, source active ou non.
+
+| Route | Effet |
+|---|---|
+| `GET /api/admin/sources` | `200` → tableau de sources, trié par nom (sans casse) puis `id`. Une seule requête SQL (jointure + agrégats). |
+| `GET /api/admin/sources/{id}` | `200` → une source · `404` `Source introuvable.` |
+| `POST /api/admin/sources` | Corps `{"name", "feed_url"}`. `201` → la source créée (active). Voir ci-dessous. |
+| `POST /api/admin/sources/{id}/deactivate` | `200` → la source, `active: false`. Idempotent. **Garde** les articles et les sujets ; l'ingestion ne lit plus ce flux. `404` si inconnue. |
+| `POST /api/admin/sources/{id}/reactivate` | `200` → la source, `active: true`. Idempotent. `404` si inconnue. |
+| `DELETE /api/admin/sources/{id}?confirm=<n>` | Suppression **définitive**. `confirm` (entier ≥ 0, obligatoire) doit être le nombre d'articles qui disparaissent (`article_count`). `200` → `{"id", "deleted_articles"}` · `409` si `confirm` ne correspond pas (rien n'est supprimé ; le message donne le vrai nombre) · `404` · `422` si `confirm` manque ou n'est pas un entier. |
+
+**Ajout** (`POST`). Le nom est nettoyé (espaces et caractères de contrôle) : 1 à 100 caractères. L'URL : `http` ou `https` seulement, 2048 caractères au plus, sans espace ni `\`, sans identifiants (`user:pass@`) ; schéma et hôte sont mis en minuscules, le fragment (`#…`) est retiré. Ordre des contrôles, le premier qui échoue répond :
+
+1. `422` entrée invalide (nom vide ou trop long, schéma, identifiants, URL trop longue…), message précis en français ; aucune requête réseau.
+2. `409` `Cette source existe déjà (elle est peut-être désactivée).` (doublon d'URL, source désactivée comprise) ; aucune requête réseau.
+3. Le serveur récupère l'URL (garde SSRF ci-dessous). Échec, quelle qu'en soit la cause (adresse refusée, hôte inconnu, injoignable, délai, statut HTTP ≠ 200, trop de redirections, réponse trop volumineuse) : `422` avec **un seul message** : `Cette adresse est refusée ou injoignable. Vérifiez l'adresse du flux.` Ni l'adresse résolue ni la cause ne sont renvoyées : l'API ne permet pas de sonder le réseau interne.
+4. Le contenu doit être un flux lisible avec **au moins un article valide** : sinon `422` `Cette adresse ne renvoie pas un flux RSS ou Atom lisible.` ou `Ce flux ne contient aucun article exploitable.` (un document XML bien formé mais vide, comme un sitemap, ne prouve pas que c'est un flux). Rien n'est enregistré.
+
+Ré-ajouter l'URL d'une source supprimée définitivement est permis ; elle quitte alors la liste des suppressions.
+
+**Garde SSRF** (le serveur va chercher l'URL). Appliquée à l'URL et à **chaque** redirection (suivies à la main, 5 au plus, schéma http(s) seulement, `Location` revérifiée) :
+
+- hôte : nom DNS ordinaire ou IP littérale publique ; `localhost` et `*.localhost` refusés ; formes d'IP exotiques (`2130706433`, `0x7f000001`, `127.1`) refusées ;
+- le nom est résolu **une fois** et **toutes** les adresses doivent être publiques : refus des adresses privées, loopback, link-local (dont `169.254.169.254`, métadonnées cloud), non spécifiées (`0.0.0.0`, `::`), partagées (`100.64/10`), réservées, multicast, IPv6 locales (`::1`, `fe80::`, `fc00::`) et IPv6 mappées IPv4 (`::ffff:10.0.0.1`, jugées comme l'IPv4 qu'elles contiennent) ;
+- la connexion se fait vers l'IP validée (en-tête `Host` et SNI/certificat TLS conservés) : une réponse DNS qui change entre la vérification et la connexion (DNS rebinding) ne détourne pas la requête ;
+- variables proxy de l'environnement ignorées ; 10 s au total, 5 Mo décodés au plus.
+
+**Suppression** : les articles partent en cascade, l'URL est mémorisée dans `deleted_sources` pour que l'initialisation depuis `feeds.yaml` ne recrée pas la source. Un sujet qui perd des articles n'est pas supprimé (ses votes sont conservés) : s'il lui reste moins de médias distincts que le minimum pour la une, ou plus aucun article, il n'apparaît plus sur la une ni dans le flux de vote ; son titre et son résumé ne changent qu'au prochain regroupement qui lui rattache un article.
+
 ## Halving
 
 ### `GET /api/halving/config` — public
