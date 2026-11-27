@@ -1,3 +1,4 @@
+import { draftStore } from "../lib/draftStore";
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
@@ -109,7 +110,24 @@ describe("Vérification du lien", () => {
   it("brouillon fusionné par le serveur : le message l'indique", async () => {
     session({ "POST /api/auth/verify": () => res(200, { email: EMAIL, draft: { added: 2, ignored: 1 } }) });
     renderLogin("/connexion?token=t");
-    expect(await screen.findByText("Vous êtes connecté·e. 2 sujets ont été ajoutés à votre une.")).toBeInTheDocument();
+    expect(await screen.findByText(/2 sujets ont été ajoutés à votre une\./)).toBeInTheDocument();
+    expect(screen.getByText(/1 autre sujet a été ignoré/)).toBeInTheDocument();
+  });
+
+  it("brouillon fusionné : vide le brouillon local de ce navigateur", async () => {
+    draftStore.set({ editionDate: "2026-11-27", ids: [4, 5] });
+    session({ "POST /api/auth/verify": () => res(200, { email: EMAIL, draft: { added: 2, ignored: 0 } }) });
+    renderLogin("/connexion?token=t");
+    await screen.findByText(/2 sujets ont été ajoutés/);
+    expect(draftStore.get().ids).toEqual([]);
+  });
+
+  it("sans brouillon joint : le brouillon local reste (fusion proposée sur /composer)", async () => {
+    draftStore.set({ editionDate: "2026-11-27", ids: [4] });
+    session({ "POST /api/auth/verify": () => res(200, { email: EMAIL, draft: null }) });
+    renderLogin("/connexion?token=t");
+    await screen.findByText("Vous êtes connecté·e.");
+    expect(draftStore.get().ids).toEqual([4]);
   });
 
   it("400 : message « lien plus valable » et formulaire", async () => {
