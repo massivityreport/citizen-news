@@ -1,10 +1,10 @@
 """Back office: home statistics (24 h window, totals, 30-day series)."""
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 
-from app.models import Account, Article
+from app.models import Account, Article, Topic
 from app.services.admin_stats import stats
 from tests.helpers import make_sources
 from tests.test_admin_articles import count_queries
@@ -47,20 +47,15 @@ def test_401_with_citizen_session(logged):
 # --- values ----------------------------------------------------------------
 
 def test_empty_database(admin, monkeypatch):
-    from app.services import admin_stats
+    from app.deps import clock
 
-    class Frozen(datetime):
-        @classmethod
-        def now(cls, tz=None):
-            return NOW
-
-    monkeypatch.setattr(admin_stats, "datetime", Frozen)
+    admin.app.dependency_overrides[clock] = lambda: NOW
     today = NOW.date().isoformat()
     r = admin.get(URL)
     assert r.status_code == 200
     assert r.headers["cache-control"] == "no-store"
     body = r.json()
-    zero = {"articles": 0}
+    zero = {"articles": 0, "participants": 0, "selections": 0}
     assert body["last_24h"] == zero and body["total"] == zero
     assert len(body["series"]) == 30
     assert all(p["articles"] == 0 for p in body["series"])
@@ -121,10 +116,10 @@ def test_route_returns_aggregates_and_nothing_personal(admin, session, source):
     session.commit()
     r = admin.get(URL)
     body = r.json()
-    assert body["last_24h"] == {"articles": 1}
+    assert body["last_24h"] == {"articles": 1, "participants": 0, "selections": 0}
     assert set(body) == {"last_24h", "total", "series"}
-    assert all(set(p) == {"date", "articles"} for p in body["series"])
-    assert "vote" not in r.text and "@" not in r.text
+    assert all(set(p) == {"date", "articles", "participants", "selections"} for p in body["series"])
+    assert "vote" not in r.text and "@" not in r.text  # no votes/voters of V1
 
 
 def test_constant_number_of_queries(admin, session, source):
@@ -137,3 +132,77 @@ def test_constant_number_of_queries(admin, session, source):
     big = len(count_queries(get_engine(), lambda: admin.get(URL)))
     assert small == big
     assert big <= 5  # 2 aggregates + the admin session check (+ margin)
+
+
+# --- participants and selections (V2) ---------------------------------------
+
+def selection(session, account, topic, when, day=NOW.date()):
+    from app.models import Selection
+
+    session.add(Selection(account_id=account, topic_id=topic, edition_date=day, created_at=when))
+    session.flush()
+
+
+@pytest.fixture
+def unes(session):
+    from tests.helpers import make_accounts
+
+    t = [Topic(title=f"S{i}") for i in range(3)]
+    session.add_all(t)
+    session.flush()
+    return make_accounts(session, 3), [x.id for x in t]
+
+
+def test_participants_are_distinct_accounts_selections_are_rows(session, unes):
+    (a, b, _empty), (t1, t2, t3) = unes
+    selection(session, a, t1, NOW - timedelta(hours=1))
+    selection(session, a, t2, NOW - timedelta(hours=2))
+    selection(session, b, t1, NOW - timedelta(hours=3))
+    # an account with an empty une has no row: not a participant
+    s = stats(session, NOW)
+    assert (s.total.participants, s.total.selections) == (2, 3)
+    assert (s.last_24h.participants, s.last_24h.selections) == (2, 3)
+    today = day(s, "2026-11-27")
+    assert (today.participants, today.selections) == (2, 3)
+
+
+def test_24h_window_and_series_of_selections(session, unes):
+    (a, b, _), (t1, t2, _) = unes
+    selection(session, a, t1, NOW - timedelta(hours=30), day=date(2026, 11, 26))  # out of the window, yesterday
+    selection(session, b, t1, NOW - timedelta(hours=23), day=date(2026, 11, 26))  # in
+    selection(session, b, t2, NOW - timedelta(hours=23), day=date(2026, 11, 26))
+    s = stats(session, NOW)
+    assert (s.total.participants, s.total.selections) == (2, 3)
+    assert (s.last_24h.participants, s.last_24h.selections) == (1, 2)
+    assert (day(s, "2026-11-26").participants, day(s, "2026-11-26").selections) == (2, 3)  # 30 h ago is still the 26th UTC
+    assert day(s, "2026-11-27").selections == 0
+
+
+def test_same_account_on_two_days_counts_once_in_total(session, unes):
+    (a, _, _), (t1, _, _) = unes
+    selection(session, a, t1, datetime(2026, 11, 25, 10, tzinfo=UTC), day=date(2026, 11, 25))
+    selection(session, a, t1, datetime(2026, 11, 26, 10, tzinfo=UTC), day=date(2026, 11, 26))
+    s = stats(session, NOW)
+    assert (s.total.participants, s.total.selections) == (1, 2)
+    assert day(s, "2026-11-25").participants == day(s, "2026-11-26").participants == 1
+
+
+def test_route_exposes_selections_no_votes_and_constant_queries(admin, session, unes):
+    from app.db import get_engine
+    from tests.helpers import make_accounts
+
+    admin.app.dependency_overrides[__import__("app.deps", fromlist=["clock"]).clock] = lambda: NOW
+    (a, b, _), (t1, t2, _) = unes
+    selection(session, a, t1, NOW - timedelta(hours=1))
+    session.commit()
+    r = admin.get(URL)
+    body = r.json()
+    assert body["last_24h"] == {"articles": 0, "participants": 1, "selections": 1}
+    assert "votes" not in r.text and "voters" not in r.text
+    small = len(count_queries(get_engine(), lambda: admin.get(URL)))
+    for acc in make_accounts(session, 20):
+        selection(session, acc, t1, NOW - timedelta(days=acc % 25))
+        selection(session, acc, t2, NOW - timedelta(days=acc % 25))
+    session.commit()
+    assert len(count_queries(get_engine(), lambda: admin.get(URL))) == small
+    assert len(admin.get(URL).json()["series"]) == 30

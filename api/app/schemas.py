@@ -1,6 +1,7 @@
 """HTTP response models (see docs/api-contract.md)."""
 
 from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -165,9 +166,10 @@ class AdminArticlePage(BaseModel):
 class AdminTopicRow(BaseModel):
     id: int
     title: str
-    updated_at: datetime
     article_count: int
     source_count: int
+    updated_at: datetime
+    approvals: int  # accounts that have the topic in their une of the edition in progress
     image_url: str | None
 
 
@@ -180,11 +182,12 @@ class AdminTopicPage(BaseModel):
 
 class AdminStatsCounts(BaseModel):
     articles: int
+    participants: int  # distinct accounts with at least one selection
+    selections: int  # selection rows (topics put in a une)
 
 
-class AdminStatsDay(BaseModel):
+class AdminStatsDay(AdminStatsCounts):
     date: str  # YYYY-MM-DD, UTC
-    articles: int
 
 
 class AdminStats(BaseModel):
@@ -201,6 +204,13 @@ class AdminTopicArticle(BaseModel):
     published_at: datetime | None
 
 
+class AdminTopicHistory(BaseModel):
+    edition_date: date
+    rank: int | None  # None: had approvals but did not make the published une
+    approvals: int
+    proportion: float
+
+
 class AdminTopicDetail(BaseModel):
     id: int
     title: str
@@ -211,6 +221,8 @@ class AdminTopicDetail(BaseModel):
     source_count: int
     articles: list[AdminTopicArticle]
     articles_truncated: bool
+    approvals: int
+    history: list[AdminTopicHistory]
 
 
 # --- Published editions (public) ---
@@ -251,3 +263,42 @@ class EditionSummary(BaseModel):
 
 class EditionList(BaseModel):
     items: list[EditionSummary]
+
+
+# --- Admin: editions ---
+
+
+class AdminEditionPage(BaseModel):
+    items: list[EditionSummary]
+    total: int
+    page: int
+    page_size: int
+
+
+class AdminItem(BaseModel):
+    rank: int
+    topic_id: int
+    title: str
+    approvals: int
+    proportion: float
+    source_count: int
+    article_count: int
+    updated_at: datetime
+    tied_with: list[int]
+    broken_by: Literal["source_count", "updated_at", "id"] | None
+
+
+class AdminTie(BaseModel):
+    approvals: int
+    topic_ids: list[int]
+    broken_by: Literal["source_count", "updated_at", "id"]
+    crosses_cut: bool
+
+
+class AdminPreview(BaseModel):
+    computed_at: datetime
+    edition_date: date
+    participants: int
+    topics: list[AdminItem]
+    next: list[AdminItem]
+    ties: list[AdminTie]
