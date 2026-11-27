@@ -230,3 +230,23 @@ def test_number_of_queries_does_not_depend_on_topics(session, media):
     session.execute(Selection.__table__.delete())
     many = _count_queries(session, media, 15)
     assert few == many
+
+
+def test_updated_at_one_microsecond_apart_is_ordered_and_reported_as_updated_at(session, media):
+    older, newer = topic(session, media, "older"), topic(session, media, "newer")
+    base = NOW - timedelta(hours=2)
+    older.updated_at = base
+    newer.updated_at = base + timedelta(microseconds=1)
+    session.commit()
+    unes(session, {older.id: 1, newer.id: 1})
+    r = aggregate(session, DAY, NOW)
+    assert ids(r.ranking) == [newer.id, older.id] and r.ties[0].broken_by == "updated_at"
+
+
+def test_score_never_exceeds_participants_and_participants_include_topicless_pool_unes(session, media):
+    """Participants and scores come from one statement: proportions stay within [0, 1]."""
+    a = topic(session, media)
+    out = topic(session, media, "out", n=1)
+    unes(session, {a.id: 1, out.id: 3})
+    r = aggregate(session, DAY, NOW)
+    assert r.participants == 3 and all(0 < t.proportion <= 1 for t in r.ranking)

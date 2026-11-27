@@ -11,14 +11,14 @@
 - the publication data of every ranked topic (title, summary, sources, counts, image), captured from the very same
   reading, plus the proportion = score / participants.
 
-Constant number of queries (participants, pool, scores, topics, cards): none per topic.
+Constant number of queries (pool, participants+scores in one statement, topics, cards): none per topic.
 """
 
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Literal
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from app.models.entities import MAX_UNE_TOPICS, Selection, Topic
@@ -26,6 +26,7 @@ from app.services.pool import eligible_pool
 from app.services.topics import build_cards
 
 Criterion = Literal["source_count", "updated_at", "id"]
+_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 _DEPTH: dict[Criterion, int] = {"source_count": 0, "updated_at": 1, "id": 2}
 
 
@@ -86,28 +87,34 @@ def _decisive(a, b) -> Criterion:
     return "id"
 
 
+def _micros(value: datetime) -> int:
+    """Exact integer microseconds (a float timestamp would merge instants 1 µs apart): same resolution as the tie criterion."""
+    return (value - _EPOCH) // timedelta(microseconds=1)
+
+
 def _iso(value: datetime | None) -> str | None:
     return value.astimezone(UTC).isoformat().replace("+00:00", "Z") if value else None
 
 
 def aggregate(session: Session, edition_date: date, now: datetime, *, top: int = MAX_UNE_TOPICS, extra: int = 10) -> Aggregation:
-    participants = session.scalar(
-        select(func.count(func.distinct(Selection.account_id))).where(Selection.edition_date == edition_date)
-    ) or 0
     pool = {e.topic_id: e for e in eligible_pool(session, now)}
+    # Participants and scores come from ONE statement (one snapshot): a concurrent write can never give a score
+    # above the number of participants. GROUPING SETS: one row per topic, plus the grand total (topic_id NULL),
+    # which is the number of distinct accounts with a non-empty une (it exists even with no selection: 0).
+    participants = 0
     scores: dict[int, int] = {}
-    if pool:
-        scores = {
-            topic_id: count
-            for topic_id, count in session.execute(
-                select(Selection.topic_id, func.count(func.distinct(Selection.account_id)))
-                .where(Selection.edition_date == edition_date, Selection.topic_id.in_(list(pool)))
-                .group_by(Selection.topic_id)
-            )
-        }
+    for topic_id, count in session.execute(
+        select(Selection.topic_id, func.count(func.distinct(Selection.account_id)))
+        .where(Selection.edition_date == edition_date)
+        .group_by(text("GROUPING SETS ((selections.topic_id), ())"))
+    ):
+        if topic_id is None:
+            participants = count
+        elif topic_id in pool:  # only topics eligible now count
+            scores[topic_id] = count
     ordered = sorted(
-        (pool[t] for t in scores if scores[t] >= 1),
-        key=lambda e: (-scores[e.topic_id], -e.source_count, -e.updated_at.timestamp(), e.topic_id),
+        (pool[t] for t in scores),
+        key=lambda e: (-scores[e.topic_id], -e.source_count, -_micros(e.updated_at), e.topic_id),
     )
     topics = {t.id: t for t in session.scalars(select(Topic).where(Topic.id.in_([e.topic_id for e in ordered])))} if ordered else {}
     ordered = [e for e in ordered if e.topic_id in topics]  # deleted in between: gone
