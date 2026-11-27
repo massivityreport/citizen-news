@@ -8,6 +8,7 @@ import type {
   CurrentEdition,
   Edition,
   EditionSummary,
+  FeedbackInput,
   MergeResult,
   Me,
   Page,
@@ -120,6 +121,8 @@ export const api = {
     request<void>("/auth/magic-link", { method: "POST", body: draft ? { email, draft } : { email } }),
 
   verify: (token: string) => request<VerifyResult>("/auth/verify", { method: "POST", body: { token } }),
+
+  feedback: (body: FeedbackInput) => request<void>("/feedback", { method: "POST", body }),
 
   logout: () => request<void>("/auth/logout", { method: "POST" }),
 

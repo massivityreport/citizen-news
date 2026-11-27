@@ -204,3 +204,15 @@ export interface AdminPreview {
   next: AdminPreviewItem[];
   ties: AdminPreviewTie[];
 }
+
+export type FeedbackKind = "problem" | "idea" | "other";
+
+/** Corps de POST /api/feedback. `email` n'est envoyé que sans session (le serveur utilise celui de la session sinon). */
+export interface FeedbackInput {
+  kind: FeedbackKind;
+  message: string;
+  email?: string;
+  page_name: string;
+  page_url: string;
+  screen: string;
+}

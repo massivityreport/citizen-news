@@ -1,5 +1,6 @@
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { AccountMenu } from "./AccountMenu";
+import { FeedbackLink, FeedbackProvider, FeedbackTab } from "./Feedback";
 import styles from "./Layout.module.css";
 
 const NAV = [
@@ -14,6 +15,7 @@ export function Layout() {
   const showFixedCta = pathname !== "/composer";
 
   return (
+    <FeedbackProvider>
     <div className={styles.shell}>
       <a className={styles.skip} href="#contenu">
         Aller au contenu
@@ -23,7 +25,10 @@ export function Layout() {
           <Link to="/" className={styles.brand}>
             Citizen News
           </Link>
-          <AccountMenu />
+          <div className={styles.barActions}>
+            <FeedbackLink />
+            <AccountMenu />
+          </div>
         </div>
         <nav aria-label="Navigation principale" className={`${styles.nav} container`}>
           <ul>
@@ -43,11 +48,13 @@ export function Layout() {
       <footer className={`${styles.footer} container`}>
         <p>Citizen News — la une choisie par les citoyens.</p>
       </footer>
+      <FeedbackTab />
       {showFixedCta && (
         <Link to="/composer" className={styles.fixedCta} data-testid="fixed-cta">
           Composer ma une
         </Link>
       )}
     </div>
+    </FeedbackProvider>
   );
 }
