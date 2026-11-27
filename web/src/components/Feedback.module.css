@@ -1,4 +1,4 @@
-.link { color: var(--c-on-primary); background: transparent; border: 1px solid rgb(255 255 255 / .6); border-radius: 999px; padding: .3rem .8rem; font: inherit; font-size: .9rem; cursor: pointer; }
+.link { white-space: nowrap; color: var(--c-on-primary); background: transparent; border: 1px solid rgb(255 255 255 / .6); border-radius: 999px; padding: .3rem .8rem; font: inherit; font-size: .9rem; cursor: pointer; }
 .link:hover { background: rgb(255 255 255 / .12); }
 
 /* Onglet vertical, bord droit, mi-hauteur : loin du bouton fixe du bas sur téléphone. */
