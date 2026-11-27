@@ -66,3 +66,82 @@ export interface AdminSource {
   article_count: number;
   last_article_at: string | null;
 }
+
+export type TopicState = "new" | "active" | "reserve" | "emerged";
+
+export interface Page<T> {
+  items: T[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface AdminSourceRef {
+  id: number;
+  name: string;
+  active: boolean;
+}
+
+export interface AdminArticle {
+  id: number;
+  title: string;
+  url: string;
+  source: AdminSourceRef;
+  published_at: string | null;
+  fetched_at: string;
+  topic: { id: number; title: string } | null;
+  grouped: boolean;
+}
+
+export interface AdminTopicRow {
+  id: number;
+  title: string;
+  state: TopicState;
+  wave: number;
+  state_changed_at: string | null;
+  article_count: number;
+  source_count: number;
+  vote_count: number;
+  image_url: string | null;
+}
+
+export interface AdminVoteDay {
+  date: string;
+  more: number;
+  not_priority: number;
+  unknown: number;
+  total: number;
+}
+
+export interface AdminTopicDetail {
+  id: number;
+  title: string;
+  summary: string;
+  state: TopicState;
+  wave: number;
+  first_seen_at: string;
+  updated_at: string;
+  state_changed_at: string | null;
+  evaluated_at: string | null;
+  article_count: number;
+  source_count: number;
+  support: { score: number; level: SupportLevel; votes_count: number };
+  front: { on_front: boolean; reason: Reason | null };
+  votes: {
+    more: number;
+    not_priority: number;
+    unknown: number;
+    total: number;
+    voters: number;
+    first_vote_at: string | null;
+    daily: AdminVoteDay[];
+  };
+  articles: { id: number; title: string; url: string; source: AdminSourceRef; published_at: string | null }[];
+  articles_truncated: boolean;
+}
+
+export interface AdminVote {
+  date: string;
+  choice: VoteChoice;
+  account_id: number;
+}

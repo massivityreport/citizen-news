@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { api } from "./client";
 
 export const meKey = ["me"] as const;
@@ -72,5 +72,32 @@ export function useDeleteSource() {
     mutationFn: ({ id, confirm }: { id: number; confirm: number }) => api.adminDeleteSource(id, confirm),
     // même en cas de refus (nombre d’articles changé) : on recharge la liste pour afficher le vrai nombre
     onSettled: () => qc.invalidateQueries({ queryKey: adminSourcesKey }),
+  });
+}
+
+// Listes du backoffice : la clé contient tous les paramètres (page, tri, filtres) ; keepPreviousData garde
+// l’ancienne page affichée pendant le chargement de la suivante.
+export const adminArticlesKey = (params: Record<string, string>) => ["admin", "articles", params] as const;
+export const adminTopicsKey = (params: Record<string, string>) => ["admin", "topics", params] as const;
+export const adminTopicKey = (id: number) => ["admin", "topic", id] as const;
+export const adminTopicVotesKey = (id: number, params: Record<string, string>) => ["admin", "topic", id, "votes", params] as const;
+
+export function useAdminArticles(params: Record<string, string>) {
+  return useQuery({ queryKey: adminArticlesKey(params), queryFn: () => api.adminArticles(params), placeholderData: keepPreviousData });
+}
+
+export function useAdminTopics(params: Record<string, string>) {
+  return useQuery({ queryKey: adminTopicsKey(params), queryFn: () => api.adminTopics(params), placeholderData: keepPreviousData });
+}
+
+export function useAdminTopic(id: number) {
+  return useQuery({ queryKey: adminTopicKey(id), queryFn: () => api.adminTopic(id) });
+}
+
+export function useAdminTopicVotes(id: number, params: Record<string, string>) {
+  return useQuery({
+    queryKey: adminTopicVotesKey(id, params),
+    queryFn: () => api.adminTopicVotes(id, params),
+    placeholderData: keepPreviousData,
   });
 }

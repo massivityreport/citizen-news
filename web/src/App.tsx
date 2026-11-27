@@ -11,8 +11,9 @@ const LoginPage = lazy(() => import("./pages/LoginPage"));
 const AdminLayout = lazy(() => import("./pages/admin/AdminLayout"));
 const AdminHomePage = lazy(() => import("./pages/admin/AdminPages").then((m) => ({ default: m.AdminHomePage })));
 const AdminSourcesPage = lazy(() => import("./pages/admin/AdminSourcesPage"));
-const AdminArticlesPage = lazy(() => import("./pages/admin/AdminPages").then((m) => ({ default: m.AdminArticlesPage })));
-const AdminTopicsPage = lazy(() => import("./pages/admin/AdminPages").then((m) => ({ default: m.AdminTopicsPage })));
+const AdminArticlesPage = lazy(() => import("./pages/admin/AdminArticlesPage"));
+const AdminTopicsPage = lazy(() => import("./pages/admin/AdminTopicsPage"));
+const AdminTopicDetailPage = lazy(() => import("./pages/admin/AdminTopicDetailPage"));
 const NotFoundPage = lazy(() => import("./pages/NotFoundPage"));
 
 export function AppRoutes() {
@@ -24,6 +25,7 @@ export function AppRoutes() {
           <Route path="sources" element={<AdminSourcesPage />} />
           <Route path="articles" element={<AdminArticlesPage />} />
           <Route path="sujets" element={<AdminTopicsPage />} />
+          <Route path="sujets/:id" element={<AdminTopicDetailPage />} />
           <Route path="*" element={<AdminHomePage />} />
         </Route>
         <Route element={<Layout />}>

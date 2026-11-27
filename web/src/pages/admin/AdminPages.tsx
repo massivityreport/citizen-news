@@ -11,18 +11,3 @@ export function AdminHomePage() {
     </section>
   );
 }
-
-function Soon({ title }: { title: string }) {
-  const h1 = usePageTitle(title);
-  return (
-    <section>
-      <h1 ref={h1} tabIndex={-1}>
-        {title}
-      </h1>
-      <p>Bientôt disponible.</p>
-    </section>
-  );
-}
-
-export const AdminArticlesPage = () => <Soon title="Articles" />;
-export const AdminTopicsPage = () => <Soon title="Sujets" />;

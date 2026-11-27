@@ -44,3 +44,22 @@
 .dialog p { margin: 0; }
 .dialogButtons { display: flex; flex-wrap: wrap; gap: .6rem; justify-content: flex-end; }
 .btnDanger { background: #b42318; }
+
+/* Listes paginées */
+.sortBtn { font: inherit; font-weight: 700; background: none; border: 0; padding: 0; color: inherit; cursor: pointer; text-align: left; }
+.sortBtn:hover { text-decoration: underline; }
+.pager { display: flex; flex-wrap: wrap; align-items: center; gap: .8rem; margin-block: 1rem; }
+.filters { display: flex; flex-wrap: wrap; align-items: end; gap: .8rem 1rem; }
+.field { display: grid; gap: .25rem; font-size: .9rem; font-weight: 700; }
+.field select, .field input[type="date"] { font: inherit; padding: .45rem .5rem; min-height: 2.5rem; border: 2px solid var(--c-primary); border-radius: var(--radius); background: var(--c-surface); color: var(--c-text); max-width: 18rem; }
+.check { display: inline-flex; align-items: center; gap: .4rem; min-height: 2.5rem; font-weight: 700; font-size: .9rem; }
+.grouped { color: #0b6b34; }
+.ungrouped { color: #8a5a00; }
+.muted { color: var(--c-muted); }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: .8rem; margin: 0; }
+.stats div { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--radius); padding: .7rem .9rem; }
+.stats dt { font-size: .85rem; color: var(--c-muted); }
+.stats dd { margin: 0; font-weight: 700; font-size: 1.1rem; }
+.stats dd small { font-weight: 400; font-size: .8rem; color: var(--c-muted); display: block; }
+.section h2 { margin: 0; font-size: 1.2rem; }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
