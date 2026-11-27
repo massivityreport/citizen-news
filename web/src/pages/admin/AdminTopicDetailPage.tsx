@@ -92,13 +92,13 @@ export default function AdminTopicDetailPage() {
             </thead>
             <tbody>
               {t.history.map((h) => (
-                <tr key={h.date}>
+                <tr key={h.edition_date}>
                   <th scope="row">
-                    <Link to={`/admin/editions/${h.date}`}>{formatEditionDate(h.date)}</Link>
+                    <Link to={`/admin/editions/${h.edition_date}`}>{formatEditionDate(h.edition_date)}</Link>
                   </th>
                   <td className={styles.num}>{h.rank ?? "—"}</td>
                   <td className={styles.num}>{h.approvals}</td>
-                  <td className={styles.num}>{h.proportion === undefined ? "—" : formatPercent(h.proportion)}</td>
+                  <td className={styles.num}>{formatPercent(h.proportion)}</td>
                 </tr>
               ))}
             </tbody>

@@ -25,7 +25,7 @@ const where = () => screen.getByTestId("where").textContent;
 const ME: Record<string, Handler> = { "GET /api/admin/me": () => res(200, { authenticated: true }) };
 
 const row = (id: number, over: Partial<AdminTopicRow> = {}): AdminTopicRow => ({
-  id, title: `Sujet ${id}`, article_count: 4, source_count: 3, updated_at: "2026-11-26T08:00:00Z", approvals: 12, ...over,
+  id, title: `Sujet ${id}`, article_count: 4, source_count: 3, updated_at: "2026-11-26T08:00:00Z", approvals: 12, image_url: null, ...over,
 });
 const list = (items: AdminTopicRow[], total = items.length, page = 1): Page<AdminTopicRow> => ({ items, total, page, page_size: 50 });
 
@@ -99,8 +99,8 @@ const detail = (over: Partial<AdminTopicDetail> = {}): AdminTopicDetail => ({
   first_seen_at: "2026-11-01T08:00:00Z", updated_at: "2026-11-26T08:00:00Z",
   article_count: 2, source_count: 2, approvals: 14,
   history: [
-    { date: "2026-11-26", approvals: 80, proportion: 0.667, rank: 1 },
-    { date: "2026-11-25", approvals: 9, rank: null },
+    { edition_date: "2026-11-26", approvals: 80, proportion: 0.4, rank: 1 },
+    { edition_date: "2026-11-25", approvals: 9, proportion: 0.05, rank: null },
   ],
   articles: [
     { id: 1, title: "Article A", url: "https://a.example/1", source: { id: 1, name: "Alpha", active: true }, published_at: "2026-11-25T10:00:00Z" },
@@ -123,7 +123,7 @@ describe("détail d’un sujet", () => {
     expect(rows).toHaveLength(2);
     expect(within(rows[0]).getByRole("link")).toHaveAttribute("href", "/admin/editions/2026-11-26");
     expect(rows[0]).toHaveTextContent("80");
-    expect(rows[0]).toHaveTextContent("67 %");
+    expect(rows[0]).toHaveTextContent("40 %");
     expect(rows[1]).toHaveTextContent("—");
     const articles = screen.getByRole("table", { name: /Articles du sujet \(2\)/ });
     expect(within(articles).getByRole("link", { name: "Article A" })).toHaveAttribute("href", "https://a.example/1");

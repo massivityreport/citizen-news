@@ -1,5 +1,6 @@
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useAdminEditions } from "../../api/hooks";
+import { intParam, Pager, useParamSetter } from "../../components/admin/TableParts";
 import { usePageTitle } from "../../components/usePageTitle";
 import { formatEditionDate, formatFull } from "../../lib/format";
 import styles from "./Admin.module.css";
@@ -7,7 +8,10 @@ import styles from "./Admin.module.css";
 /** Onglet Éditions : les unes publiées, la plus récente d’abord. */
 export default function AdminEditionsPage() {
   const h1 = usePageTitle("Éditions");
-  const editions = useAdminEditions();
+  const [sp] = useSearchParams();
+  const page = intParam(sp.get("page"), 1);
+  const set = useParamSetter();
+  const editions = useAdminEditions({ page: String(page) });
   return (
     <section className={styles.section}>
       <h1 ref={h1} tabIndex={-1}>
@@ -21,11 +25,23 @@ export default function AdminEditionsPage() {
       )}
       {editions.data &&
         (editions.data.items.length === 0 ? (
-          <p role="status">Aucune édition n’a encore été publiée.</p>
+          <p role="status">
+            {editions.data.total === 0 ? (
+              "Aucune édition n’a encore été publiée."
+            ) : (
+              <>
+                Cette page n’existe pas.{" "}
+                <button type="button" className={styles.small} onClick={() => set({ page: null })}>
+                  Revenir à la première page
+                </button>
+              </>
+            )}
+          </p>
         ) : (
+          <>
           <div className={styles.tableWrap}>
             <table className={styles.table}>
-              <caption>Éditions publiées : {editions.data.items.length}</caption>
+              <caption>Éditions publiées : {editions.data.total}, page {editions.data.page}</caption>
               <thead>
                 <tr>
                   <th scope="col">Date</th>
@@ -50,6 +66,8 @@ export default function AdminEditionsPage() {
               </tbody>
             </table>
           </div>
+          <Pager page={editions.data.page} pageSize={editions.data.page_size} total={editions.data.total} unit="éditions" onPage={(p) => set({ page: String(p) }, true)} />
+          </>
         ))}
     </section>
   );

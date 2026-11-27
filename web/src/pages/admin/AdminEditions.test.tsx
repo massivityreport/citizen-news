@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { AppRoutes } from "../../App";
 import type { Edition } from "../../api/types";
 import { renderWithProviders } from "../../test/utils";
@@ -26,10 +27,10 @@ describe("onglet Éditions", () => {
     stubFetch({
       ...ME,
       "GET /api/admin/editions": () =>
-        res(200, { items: [{ date: "2026-11-26", published_at: "2026-11-26T16:00:00Z", participants: 120, topic_count: 10 }] }),
+        res(200, { items: [{ date: "2026-11-26", published_at: "2026-11-26T16:00:00Z", participants: 120, topic_count: 10 }], total: 1, page: 1, page_size: 50 }),
     });
     open("/admin/editions");
-    const table = await screen.findByRole("table", { name: /Éditions publiées : 1/ });
+    const table = await screen.findByRole("table", { name: /Éditions publiées : 1, page 1/ });
     const row = within(table).getAllByRole("row")[1];
     expect(within(row).getByRole("link", { name: "26 novembre 2026" })).toHaveAttribute("href", "/admin/editions/2026-11-26");
     expect(within(row).getAllByRole("cell").map((c) => c.textContent).slice(1)).toEqual(["120", "10"]);
@@ -40,13 +41,33 @@ describe("onglet Éditions", () => {
   });
 
   it("liste vide et erreur", async () => {
-    stubFetch({ ...ME, "GET /api/admin/editions": () => res(200, { items: [] }) });
+    stubFetch({ ...ME, "GET /api/admin/editions": () => res(200, { items: [], total: 0, page: 1, page_size: 50 }) });
     const { unmount } = open("/admin/editions");
     expect(await screen.findByText("Aucune édition n’a encore été publiée.")).toBeInTheDocument();
     unmount();
     stubFetch({ ...ME, "GET /api/admin/editions": () => res(500, {}) });
     open("/admin/editions");
     expect(await screen.findByRole("alert")).toHaveTextContent("Impossible de charger les éditions");
+  });
+
+  it("pagination : page et page_size dans l’appel, jamais limit", async () => {
+    const calls: URLSearchParams[] = [];
+    const items = [{ date: "2026-11-26", published_at: "2026-11-26T16:00:00Z", participants: 1, topic_count: 1 }];
+    stubFetch({
+      ...ME,
+      "GET /api/admin/editions": (_i, url) => {
+        const q = new URLSearchParams(url.split("?")[1] ?? "");
+        calls.push(q);
+        return res(200, { items, total: 120, page: Number(q.get("page")), page_size: 50 });
+      },
+    });
+    open("/admin/editions");
+    await screen.findByRole("table");
+    expect(calls[0].get("page")).toBe("1");
+    expect(calls[0].has("limit")).toBe(false);
+    await userEvent.click(screen.getByRole("button", { name: "Suivant" }));
+    expect(await screen.findByText("Page 2 sur 3 — 120 éditions")).toBeInTheDocument();
+    expect(calls[calls.length - 1].get("page")).toBe("2");
   });
 
   it("détail : approbations, proportion, lien vers le sujet (sauf sujet supprimé)", async () => {

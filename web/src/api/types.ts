@@ -130,6 +130,7 @@ export interface AdminTopicRow {
   source_count: number;
   updated_at: string;
   approvals: number;
+  image_url: string | null;
 }
 
 export interface AdminStatsCounts {
@@ -149,10 +150,10 @@ export interface AdminStats {
 
 /** Approbations d'un sujet dans une édition publiée. */
 export interface AdminTopicHistory {
-  date: string;
+  edition_date: string;
   approvals: number;
-  proportion?: number;
-  rank?: number | null;
+  proportion: number;
+  rank: number | null;
 }
 
 export interface AdminTopicDetail {
@@ -165,7 +166,7 @@ export interface AdminTopicDetail {
   source_count: number;
   /** Approbations de l'édition en cours. */
   approvals: number;
-  /** Une entrée par édition publiée, la plus récente d'abord. */
+  /** 30 dernières éditions publiées, la plus récente d'abord. */
   history: AdminTopicHistory[];
   articles: { id: number; title: string; url: string; source: AdminSourceRef; published_at: string | null }[];
   articles_truncated: boolean;

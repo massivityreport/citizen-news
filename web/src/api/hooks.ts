@@ -148,7 +148,7 @@ export function useDeleteSource() {
 export const adminArticlesKey = (params: Record<string, string>) => ["admin", "articles", params] as const;
 export const adminTopicsKey = (params: Record<string, string>) => ["admin", "topics", params] as const;
 export const adminTopicKey = (id: number) => ["admin", "topic", id] as const;
-export const adminEditionsKey = ["admin", "editions"] as const;
+export const adminEditionsKey = (params: Record<string, string>) => ["admin", "editions", params] as const;
 export const adminEditionKey = (date: string) => ["admin", "edition", date] as const;
 export const adminPreviewKey = ["admin", "preview"] as const;
 
@@ -164,8 +164,8 @@ export function useAdminTopic(id: number) {
   return useQuery({ queryKey: adminTopicKey(id), queryFn: () => api.adminTopic(id) });
 }
 
-export function useAdminEditions() {
-  return useQuery({ queryKey: adminEditionsKey, queryFn: () => api.adminEditions() });
+export function useAdminEditions(params: Record<string, string>) {
+  return useQuery({ queryKey: adminEditionsKey(params), queryFn: () => api.adminEditions(params), placeholderData: keepPreviousData });
 }
 
 export function useAdminEdition(date: string) {

@@ -170,7 +170,8 @@ export const api = {
 
   adminTopic: (id: number) => request<AdminTopicDetail>(`/admin/topics/${id}`),
 
-  adminEditions: (limit = 100) => request<{ items: EditionSummary[] }>(`/admin/editions?limit=${limit}`),
+  /** Paginée comme les autres listes admin (page, page_size). */
+  adminEditions: (params: Record<string, string>) => request<Page<EditionSummary>>(`/admin/editions${query(params)}`),
 
   adminEdition: (date: string) => request<Edition>(`/admin/editions/${encodeURIComponent(date)}`),
 
