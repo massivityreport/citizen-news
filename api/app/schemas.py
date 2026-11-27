@@ -203,6 +203,25 @@ class AdminFrontOut(BaseModel):
     reason: ReasonOut | None
 
 
+class AdminStatsCounts(BaseModel):
+    articles: int
+    votes: int
+    voters: int
+
+
+class AdminStatsDay(BaseModel):
+    date: str  # YYYY-MM-DD, UTC
+    articles: int
+    votes: int
+    voters: int  # distinct accounts that voted this day: not additive across days
+
+
+class AdminStats(BaseModel):
+    last_24h: AdminStatsCounts
+    total: AdminStatsCounts
+    series: list[AdminStatsDay]
+
+
 class AdminVoteDay(BaseModel):
     date: str  # YYYY-MM-DD, UTC
     more: int

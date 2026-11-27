@@ -80,6 +80,15 @@ def list_topics(
     return AdminTopicPage(items=items, total=total, page=page, page_size=page_size)
 
 
+def day_bucket(column):
+    """The UTC calendar day of a timestamp column, as a SQL date (the convention of every daily curve)."""
+    return cast(func.date_trunc(literal_column("'day'"), func.timezone(literal_column("'UTC'"), column)), Date)
+
+
+def utc_midnight(day: date) -> datetime:
+    return datetime.combine(day, datetime.min.time(), tzinfo=UTC)
+
+
 def _daily(session: Session, topic_id: int, first: datetime | None, now: datetime) -> list[AdminVoteDay]:
     """Votes per UTC day, the last 30 days (today included) or since the first vote if that is shorter.
     Aggregated in SQL; days without a vote are filled with zeros here."""
@@ -87,7 +96,7 @@ def _daily(session: Session, topic_id: int, first: datetime | None, now: datetim
         return []
     today = now.astimezone(UTC).date()
     start = max(first.astimezone(UTC).date(), today - timedelta(days=DAILY_WINDOW_DAYS - 1))
-    day = cast(func.date_trunc(literal_column("'day'"), func.timezone(literal_column("'UTC'"), Vote.created_at)), Date)
+    day = day_bucket(Vote.created_at)
     rows = session.execute(
         select(
             day.label("day"),
@@ -97,8 +106,8 @@ def _daily(session: Session, topic_id: int, first: datetime | None, now: datetim
         )
         .where(
             Vote.topic_id == topic_id,
-            Vote.created_at >= datetime.combine(start, datetime.min.time(), tzinfo=UTC),
-            Vote.created_at < datetime.combine(today + timedelta(days=1), datetime.min.time(), tzinfo=UTC),
+            Vote.created_at >= utc_midnight(start),
+            Vote.created_at < utc_midnight(today + timedelta(days=1)),
         )
         .group_by(day)
     )

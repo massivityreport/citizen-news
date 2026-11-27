@@ -16,10 +16,11 @@ from sqlalchemy.orm import Session
 from app.db import get_session
 from app.deps import ADMIN_COOKIE, client_ip, require_admin
 from app.schemas import (
-    AdminArticlePage, AdminLoginRequest, AdminSourceCreate, AdminSourceDeleted, AdminSourceOut, AdminTopicDetail,
+    AdminArticlePage, AdminLoginRequest, AdminSourceCreate, AdminSourceDeleted, AdminSourceOut, AdminStats, AdminTopicDetail,
     AdminTopicPage, AdminVotePage,
 )
 from app.services import admin_articles as articles_service
+from app.services import admin_stats as stats_service
 from app.services import admin_topics as topics_service
 from app.services import admin as service
 from app.services import sources as sources_service
@@ -82,6 +83,11 @@ def logout(request: Request, db: Session = Depends(get_session)) -> Response:
 @protected.get("/me")
 def me() -> dict:
     return {"authenticated": True}
+
+
+@protected.get("/stats", response_model=AdminStats)
+def get_stats(db: Session = Depends(get_session)) -> AdminStats:
+    return stats_service.stats(db)
 
 
 # --- Sources ---
