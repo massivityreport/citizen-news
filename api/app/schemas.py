@@ -100,3 +100,25 @@ class MyVotes(BaseModel):
 
 class AdminLoginRequest(BaseModel):
     password: str = Field(max_length=1024)
+
+
+# --- Back office: sources ---
+
+class AdminSourceCreate(BaseModel):
+    # Loose limits here (protect the parser): the precise rules, with their French messages, are in services/sources.py.
+    name: str = Field(max_length=1000)
+    feed_url: str = Field(max_length=5000)
+
+
+class AdminSourceOut(BaseModel):
+    id: int
+    name: str
+    feed_url: str
+    active: bool
+    article_count: int
+    last_article_at: datetime | None
+
+
+class AdminSourceDeleted(BaseModel):
+    id: int
+    deleted_articles: int
