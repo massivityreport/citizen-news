@@ -51,7 +51,7 @@ class MergeOut(BaseModel):
 import re
 from typing import Annotated
 
-from pydantic import field_validator
+from pydantic import ConfigDict, field_validator, model_validator
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s.]+(\.[^@\s.]+)+$")
 
@@ -74,6 +74,13 @@ class TopicIds(BaseModel):
         return value
 
 
+def normalize_email(value: str) -> str:
+    email = value.strip().lower()
+    if len(email) > 254 or not _EMAIL_RE.match(email):
+        raise ValueError("adresse e-mail invalide")
+    return email
+
+
 class MagicLinkRequest(BaseModel):
     email: str
     draft: TopicIds | None = None  # the une typed before logging in; merged by /auth/verify
@@ -81,10 +88,75 @@ class MagicLinkRequest(BaseModel):
     @field_validator("email")
     @classmethod
     def _normalize(cls, value: str) -> str:
-        email = value.strip().lower()
-        if len(email) > 254 or not _EMAIL_RE.match(email):
-            raise ValueError("adresse e-mail invalide")
-        return email
+        return normalize_email(value)
+
+
+FEEDBACK_MAX_LENGTH = 2000
+FEEDBACK_MAX_ACTIONS = 20
+
+
+def _clean_line(value: str) -> str:
+    value = value.strip()
+    if not value or any(ord(c) < 32 or ord(c) == 127 for c in value):
+        raise ValueError("valeur invalide")
+    return value
+
+
+class RecentAction(BaseModel):
+    """One step of the visitor's recent journey: a page opened, a topic added to / removed from the front page, a login."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["page", "topic_added", "topic_removed", "login"]
+    at: str = Field(max_length=40)
+    page: str | None = Field(None, max_length=500)
+    topic_id: int | None = Field(None, ge=1, le=2**31 - 1)
+
+    @field_validator("at", "page")
+    @classmethod
+    def _line(cls, value: str | None) -> str | None:
+        return None if value is None else _clean_line(value)
+
+    @model_validator(mode="after")
+    def _fields_match_type(self) -> "RecentAction":
+        if (self.type == "page") != (self.page is not None):
+            raise ValueError("page attendue pour une page, interdite sinon")
+        if (self.type in ("topic_added", "topic_removed")) != (self.topic_id is not None):
+            raise ValueError("topic_id attendu pour un sujet, interdit sinon")
+        return self
+
+
+class FeedbackRequest(BaseModel):
+    """An opinion typed on the site. `email` is only read for visitors without a session."""
+
+    kind: Literal["problem", "idea", "other"]
+    message: str = Field(max_length=FEEDBACK_MAX_LENGTH * 2)  # raw cap protects the parser; the real one applies after strip
+    email: str | None = Field(None, max_length=400)
+    page_name: str = Field(max_length=200)
+    page_url: str = Field(max_length=500)
+    screen: str = Field(pattern=r"^\d{1,4}x\d{1,4}$")
+    recent_actions: list[RecentAction] | None = Field(None, max_length=FEEDBACK_MAX_ACTIONS)  # sent only if the visitor ticked the box
+
+    @field_validator("message")
+    @classmethod
+    def _message(cls, value: str) -> str:
+        value = value.strip()
+        if not value or len(value) > FEEDBACK_MAX_LENGTH:
+            raise ValueError("message invalide")
+        return value
+
+    @field_validator("page_name", "page_url")
+    @classmethod
+    def _no_control_chars(cls, value: str) -> str:
+        value = value.strip()
+        if not value or any(ord(c) < 32 or ord(c) == 127 for c in value):
+            raise ValueError("valeur invalide")
+        return value
+
+    @field_validator("email")
+    @classmethod
+    def _email(cls, value: str | None) -> str | None:
+        return None if value is None else normalize_email(value)
 
 
 class VerifyRequest(BaseModel):
@@ -305,3 +377,66 @@ class AdminPreview(BaseModel):
     topics: list[AdminItem]
     next: list[AdminItem]
     ties: list[AdminTie]
+
+
+class AdminFeedbackItem(BaseModel):
+    """One row of the opinions list. `answered`: at least one reply was e-mailed."""
+
+    id: int
+    created_at: datetime
+    kind: Literal["problem", "idea", "other"]
+    email: str
+    page_name: str
+    page_url: str
+    excerpt: str
+    is_read: bool
+    answered: bool = False
+
+
+class AdminFeedbackPage(BaseModel):
+    items: list[AdminFeedbackItem]
+    total: int
+    unread_count: int
+    page: int
+    page_size: int
+
+
+FEEDBACK_REPLY_MAX_LENGTH = 5000
+
+
+class AdminFeedbackReplyOut(BaseModel):
+    id: int
+    created_at: datetime
+    message: str
+
+
+class AdminFeedbackReplyRequest(BaseModel):
+    message: str = Field(max_length=FEEDBACK_REPLY_MAX_LENGTH * 2)  # raw cap protects the parser
+
+    @field_validator("message")
+    @classmethod
+    def _message(cls, value: str) -> str:
+        value = value.strip()
+        if not value or len(value) > FEEDBACK_REPLY_MAX_LENGTH:
+            raise ValueError("réponse invalide")
+        return value
+
+
+class AdminFeedbackDetail(BaseModel):
+    id: int
+    created_at: datetime
+    kind: Literal["problem", "idea", "other"]
+    email: str
+    message: str
+    page_name: str
+    page_url: str
+    screen: str
+    browser: str
+    recent_actions: list[dict] | None
+    is_read: bool
+    answered: bool = False
+    replies: list[AdminFeedbackReplyOut] = []
+
+
+class AdminUnreadCount(BaseModel):
+    unread_count: int

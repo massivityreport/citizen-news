@@ -1,5 +1,7 @@
 import type {
   AdminArticle,
+  AdminFeedbackDetail,
+  AdminFeedbackPage,
   AdminSource,
   AdminPreview,
   AdminStats,
@@ -8,6 +10,7 @@ import type {
   CurrentEdition,
   Edition,
   EditionSummary,
+  FeedbackInput,
   MergeResult,
   Me,
   Page,
@@ -121,6 +124,8 @@ export const api = {
 
   verify: (token: string) => request<VerifyResult>("/auth/verify", { method: "POST", body: { token } }),
 
+  feedback: (body: FeedbackInput) => request<void>("/feedback", { method: "POST", body }),
+
   logout: () => request<void>("/auth/logout", { method: "POST" }),
 
   /** Renvoie null si pas de session (401). */
@@ -174,6 +179,20 @@ export const api = {
   adminEditions: (params: Record<string, string>) => request<Page<EditionSummary>>(`/admin/editions${query(params)}`),
 
   adminEdition: (date: string) => request<Edition>(`/admin/editions/${encodeURIComponent(date)}`),
+
+  adminFeedback: (params: Record<string, string>) => request<AdminFeedbackPage>(`/admin/feedback${query(params)}`),
+
+  adminFeedbackUnread: () => request<{ unread_count: number }>("/admin/feedback/unread-count"),
+
+  adminFeedbackItem: (id: number) => request<AdminFeedbackDetail>(`/admin/feedback/${id}`),
+
+  adminFeedbackSetRead: (id: number, read: boolean) =>
+    request<AdminFeedbackDetail>(`/admin/feedback/${id}/${read ? "read" : "unread"}`, { method: "POST" }),
+
+  adminFeedbackReply: (id: number, message: string) =>
+    request<AdminFeedbackDetail>(`/admin/feedback/${id}/replies`, { method: "POST", body: { message } }),
+
+  adminFeedbackDelete: (id: number) => request<void>(`/admin/feedback/${id}`, { method: "DELETE" }),
 
   adminPreview: () => request<AdminPreview>("/admin/edition/preview"),
 };

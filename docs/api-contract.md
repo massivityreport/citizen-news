@@ -142,6 +142,15 @@ Requête : `{"token": "…"}` (jeton à usage unique, durée de vie limitée).
 - `200` → `{"email": "a@example.org"}`
 - `401` sans session.
 
+## Avis (`POST /api/feedback`) — public
+
+Requête : `{"kind": "problem"|"idea"|"other", "message": "…", "email": "a@example.org", "page_name": "Accueil", "page_url": "/une/2026-11-26", "screen": "390x844", "recent_actions": [{"type": "page", "at": "2026-11-27T10:00:00.000Z", "page": "/archives"}]}`.
+
+- `message` : 1 à 2000 caractères après suppression des espaces de bord. `page_name` ≤ 200, `page_url` ≤ 500 (sans caractère de contrôle), `screen` = `LxH` (4 chiffres au plus chacun). Le navigateur est l'en-tête `User-Agent` (tronqué à 300).
+- `recent_actions` (optionnel, absent si l'utilisateur ne joint pas son parcours) : tableau de **20 éléments au plus** (`422` au-delà, pas de troncature silencieuse), chacun `{"type": "page"|"topic_added"|"topic_removed"|"login", "at": <horodatage ISO, 40 car. max>, "page": <chemin sans paramètres, 500 max, type page seulement>, "topic_id": <entier, types topic_* seulement>}` ; aucun autre champ.
+- **E-mail** : avec une session, l'adresse du compte est utilisée et le champ `email` du client est **ignoré** ; sans session, `email` est obligatoire et son format vérifié (`422` sinon).
+- `201 {}` si enregistré (table `feedback`, colonne `recent_actions` JSON nullable : le parcours récent, `NULL` s'il n'est pas joint) · `422` requête invalide · `429` + `Retry-After` au-delà de `RATE_LIMIT_FEEDBACK_PER_EMAIL` (5) par adresse et `RATE_LIMIT_FEEDBACK_PER_IP` (10) par IP, sur `RATE_LIMIT_WINDOW_SECONDS`. Les requêtes invalides ne consomment pas le quota.
+
 ## Admin
 
 Backoffice derrière un mot de passe unique (`ADMIN_PASSWORD`), sans comptes ni rôles. Toutes les routes `/api/admin/*` répondent avec `Cache-Control: no-store` et `X-Robots-Tag: noindex`. Les messages d'erreur sont `{"detail": "<message en français>"}`.
@@ -226,7 +235,7 @@ Page d'accueil du backoffice. Derrière la session admin (`401` sinon, y compris
 
 ### Articles et sujets (lecture seule)
 
-Routes sous `/api/admin`, toutes derrière la session admin (`401` sinon, y compris avec une session citoyenne). **Aucune réponse ne contient d'adresse e-mail, de hash ni de donnée personnelle** (un test parcourt les réponses et échoue si une adresse y apparaît).
+Routes sous `/api/admin`, toutes derrière la session admin (`401` sinon, y compris avec une session citoyenne). **Aucune réponse ne contient d'adresse e-mail, de hash ni de donnée personnelle, à une exception : les routes `/api/admin/feedback` (section « Avis (admin) »), qui renvoient l'e-mail laissé par le visiteur** (un test parcourt les autres réponses et échoue si une adresse y apparaît).
 
 **Pagination** (`/articles`, `/topics`) : `page` (≥ 1, 100 000 au plus, défaut 1) et `page_size` (1 à 200, défaut 50) ; hors bornes → `422`. Réponse `{"items": […], "total": <n>, "page": <p>, "page_size": <s>}`. Une page au-delà de la dernière répond `200` avec `items: []` et le vrai `total`. Pagination et tri sont faits par le serveur (`LIMIT/OFFSET` + un `COUNT`), jamais en mémoire. Tout paramètre invalide → `422 {"detail": "Requête invalide (champ : …)"}` (ou un message précis pour les dates).
 
@@ -288,7 +297,7 @@ Paramètres : `page`, `page_size`, `sort` = `approvals` (défaut) | `title` | `a
 | `GET /api/admin/editions` | `{ "items": [{date, published_at, participants, topic_count}], "total", "page", "page_size" }`, plus récentes d'abord, pagination `page`/`page_size` comme les autres listes. |
 | `GET /api/admin/editions/{date}` | l'édition complète (même forme que `GET /api/editions/{date}` : approbations et proportion) · `404 {"detail": "Édition introuvable."}` · `422` si la date est mal formée. |
 
-`ItemAdmin` (`tied_with` : les autres sujets du même score ; `broken_by` : critère le plus profond ayant servi à départager son groupe, `null` s'il est seul) : `{ "rank", "topic_id", "title", "approvals", "proportion", "source_count", "article_count", "updated_at", "tied_with": [ids], "broken_by": null | "source_count" | "updated_at" | "id" }`. Jamais d'e-mail dans les réponses admin.
+`ItemAdmin` (`tied_with` : les autres sujets du même score ; `broken_by` : critère le plus profond ayant servi à départager son groupe, `null` s'il est seul) : `{ "rank", "topic_id", "title", "approvals", "proportion", "source_count", "article_count", "updated_at", "tied_with": [ids], "broken_by": null | "source_count" | "updated_at" | "id" }`. Jamais d'e-mail dans les réponses admin hors `/api/admin/feedback`.
 
 ## Santé (implémenté)
 
@@ -296,3 +305,18 @@ Paramètres : `page`, `page_size`, `sort` = `approvals` (défaut) | `title` | `a
 
 - `200` → `{"status": "ok"}` si la base répond.
 - `503` → `{"detail": "Base de données indisponible"}`.
+
+## Avis (admin) — `/api/admin/feedback`
+
+Derrière la session admin (`401` sinon, y compris avec une session citoyenne). **Seules routes admin qui renvoient une adresse e-mail** (celle de l'avis). Les avis sont ceux de `POST /api/feedback`.
+
+| Route | Rôle |
+|---|---|
+| `GET /api/admin/feedback?unread_only=false&page=1&page_size=50` | Liste du plus récent au plus ancien : `{ "items": [Avis], "total", "unread_count", "page", "page_size" }` ; `unread_only=true` ne garde que les non lus (`total` en tient compte, `unread_count` non). `Avis` : `{ "id", "created_at", "kind": "problem"\|"idea"\|"other", "email", "page_name", "page_url", "excerpt" (début du message, 140 caractères au plus), "is_read", "answered" }`. `answered` : au moins une réponse a été envoyée. |
+| `GET /api/admin/feedback/unread-count` | `{ "unread_count" }` : le nombre affiché à côté de l'onglet. |
+| `GET /api/admin/feedback/{id}` | Détail, sans effet de bord : les champs de `Avis` sauf `excerpt`, plus `message` (complet), `screen`, `browser`, `recent_actions` (liste de 20 actions au plus, `null` si le visiteur ne l'a pas jointe) et `replies` (`[{ "id", "created_at", "message" }]`, de la plus ancienne à la plus récente). `404` si inconnu. |
+| `POST /api/admin/feedback/{id}/read` · `…/unread` | Marque lu / non lu (idempotent) ; répond avec le détail. Le backoffice appelle `read` quand l'admin ouvre un avis. `404` si inconnu. |
+| `POST /api/admin/feedback/{id}/replies` | Corps `{ "message" }` (espaces de bord retirés, 1 à 5000 caractères). Envoie l'e-mail à l'adresse de l'avis (objet `Citizen News : réponse à votre avis « début de l'avis, coupé à un mot, 60 caractères au plus… »`, corps : la réponse puis l'avis cité) **puis** enregistre la réponse. `201` + le détail de l'avis (avec `replies`, `answered: true`) · `422` message vide ou trop long (rien envoyé) · `404` avis inconnu · `502 { "detail" }` si l'envoi échoue : rien n'est enregistré, l'avis n'est pas marqué répondu, on peut réessayer. |
+| `DELETE /api/admin/feedback/{id}` | Suppression définitive (l'avis, son parcours et ses réponses, par cascade). `204`, `404` si inconnu. |
+
+Migration `0011` : colonne `feedback.is_read` (faux par défaut) et index sur `created_at`. Migration `0012` : table `feedback_replies` (`id`, `feedback_id` → `feedback` `ON DELETE CASCADE`, `created_at`, `message`). Les réponses de l'utilisateur ne sont pas reçues par l'application.

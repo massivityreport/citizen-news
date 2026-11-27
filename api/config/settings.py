@@ -43,6 +43,9 @@ class Settings(BaseSettings):
     rate_limit_magic_link_per_email: int = 5
     rate_limit_magic_link_per_ip: int = 20
     rate_limit_verify_per_ip: int = 30
+    # Feedback sent from the site: per e-mail (the session's one when logged in) and per IP, over the common window.
+    rate_limit_feedback_per_email: int = 5
+    rate_limit_feedback_per_ip: int = 10
     # Une writes (PUT/DELETE/merge on /api/me/une*) per account, over their own short window.
     rate_limit_une_writes_per_account: int = Field(60, ge=1)
     rate_limit_une_window_seconds: int = Field(60, ge=1)

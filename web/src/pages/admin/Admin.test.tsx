@@ -52,6 +52,7 @@ describe("/admin", () => {
       "Sujets",
       "Éditions",
       "Aperçu de la une",
+      "Avis",
     ]);
 
     const user = userEvent.setup();

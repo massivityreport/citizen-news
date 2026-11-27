@@ -1,5 +1,8 @@
+import { useEffect } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { AccountMenu } from "./AccountMenu";
+import { FeedbackLink, FeedbackProvider, FeedbackTab } from "./Feedback";
+import { journal } from "../lib/journal";
 import styles from "./Layout.module.css";
 
 const NAV = [
@@ -12,8 +15,11 @@ const NAV = [
 export function Layout() {
   const { pathname } = useLocation();
   const showFixedCta = pathname !== "/composer";
+  // Page ouverte : le chemin seul, sans paramètres (ils peuvent porter un jeton ou une recherche).
+  useEffect(() => journal.record({ type: "page", page: pathname.slice(0, 500) }), [pathname]);
 
   return (
+    <FeedbackProvider>
     <div className={styles.shell}>
       <a className={styles.skip} href="#contenu">
         Aller au contenu
@@ -23,7 +29,10 @@ export function Layout() {
           <Link to="/" className={styles.brand}>
             Citizen News
           </Link>
-          <AccountMenu />
+          <div className={styles.barActions}>
+            <FeedbackLink />
+            <AccountMenu />
+          </div>
         </div>
         <nav aria-label="Navigation principale" className={`${styles.nav} container`}>
           <ul>
@@ -43,11 +52,13 @@ export function Layout() {
       <footer className={`${styles.footer} container`}>
         <p>Citizen News — la une choisie par les citoyens.</p>
       </footer>
+      <FeedbackTab />
       {showFixedCta && (
         <Link to="/composer" className={styles.fixedCta} data-testid="fixed-cta">
           Composer ma une
         </Link>
       )}
     </div>
+    </FeedbackProvider>
   );
 }

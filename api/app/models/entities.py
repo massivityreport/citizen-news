@@ -15,6 +15,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    false,
     func,
     true,
 )
@@ -179,3 +180,40 @@ class AdminSession(Base):
     token_hash: Mapped[str] = mapped_column(String(64), unique=True)
     created_at: Mapped[datetime] = _now()
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class Feedback(Base):
+    """Opinion sent from the public site. `email` is the session's address when logged in, else the typed one.
+    `recent_actions`: the visitor's last 20 actions (JSON list), NULL when the box was left unticked.
+    `is_read`: the admin opened it (and did not mark it unread again)."""
+
+    __tablename__ = "feedback"
+    __table_args__ = (
+        CheckConstraint("kind IN ('problem', 'idea', 'other')", name="kind"),
+        Index("ix_feedback_created_at", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    created_at: Mapped[datetime] = _now()
+    email: Mapped[str] = mapped_column(String(320))
+    kind: Mapped[str] = mapped_column(String(10))
+    message: Mapped[str] = mapped_column(Text)
+    page_name: Mapped[str] = mapped_column(String(200))
+    page_url: Mapped[str] = mapped_column(String(500))
+    screen: Mapped[str] = mapped_column(String(20))
+    browser: Mapped[str] = mapped_column(String(300))
+    recent_actions: Mapped[list | None] = mapped_column(JSON)
+    is_read: Mapped[bool] = mapped_column(Boolean, server_default=false())
+
+
+class FeedbackReply(Base):
+    """A reply the admin e-mailed to the author of an opinion. Stored only once the e-mail was sent;
+    deleted with its opinion."""
+
+    __tablename__ = "feedback_replies"
+    __table_args__ = (Index("ix_feedback_replies_feedback_id", "feedback_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    feedback_id: Mapped[int] = mapped_column(ForeignKey("feedback.id", ondelete="CASCADE"))
+    created_at: Mapped[datetime] = _now()
+    message: Mapped[str] = mapped_column(Text)

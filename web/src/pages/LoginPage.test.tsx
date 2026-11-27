@@ -5,6 +5,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, useLocation } from "react-router-dom";
+import { journal } from "../lib/journal";
 import { AppRoutes } from "../App";
 import { bodiesOf, res, stubFetch, type Handler } from "../test/api-stub";
 import { uneKey } from "../api/hooks";
@@ -106,6 +107,22 @@ describe("Vérification du lien", () => {
     expect(JSON.stringify({ ...localStorage })).not.toContain("secret123");
     await userEvent.click(screen.getByRole("link", { name: "Continuer" }));
     await waitFor(() => expect(screen.getByTestId("loc")).toHaveTextContent("/composer"));
+  });
+
+  it("la connexion réussie entre au journal du parcours, le jeton jamais", async () => {
+    session();
+    renderLogin("/connexion?token=secret123");
+    await screen.findByText("Vous êtes connecté·e.");
+    const list = journal.get();
+    expect(list.map((a) => a.type)).toContain("login");
+    expect(JSON.stringify(list)).not.toContain("secret123");
+  });
+
+  it("un lien invalide n'entre pas au journal comme connexion", async () => {
+    session({ "POST /api/auth/verify": () => res(400, { detail: "x" }) });
+    renderLogin("/connexion?token=mauvais");
+    await screen.findByRole("alert");
+    expect(journal.get().map((a) => a.type)).not.toContain("login");
   });
 
   it("brouillon fusionné par le serveur : le message l'indique", async () => {

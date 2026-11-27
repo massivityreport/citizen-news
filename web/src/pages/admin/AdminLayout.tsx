@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { onAdminUnauthorized } from "../../api/client";
-import { endAdminSession, useAdminLogout, useAdminSession } from "../../api/hooks";
+import { endAdminSession, useAdminFeedbackUnread, useAdminLogout, useAdminSession } from "../../api/hooks";
 import { useNoindex } from "../../components/useNoindex";
 import { AdminLoginForm } from "./AdminLoginForm";
 import styles from "./Admin.module.css";
@@ -14,7 +14,23 @@ const TABS = [
   { to: "/admin/sujets", label: "Sujets", end: false },
   { to: "/admin/editions", label: "Éditions", end: false },
   { to: "/admin/apercu", label: "Aperçu de la une", end: false },
+  { to: "/admin/avis", label: "Avis", end: false },
 ];
+
+/** Nombre d’avis non lus à côté du nom de l’onglet ; rien à zéro (ou tant qu’il n’est pas connu). */
+function UnreadCount() {
+  const unread = useAdminFeedbackUnread().data?.unread_count ?? 0;
+  if (unread <= 0) return null;
+  return (
+    <>
+      {" "}
+      <span className={styles.count} aria-hidden="true">
+        {unread}
+      </span>
+      <span className={styles.srOnly}> ({unread} non {unread > 1 ? "lus" : "lu"})</span>
+    </>
+  );
+}
 
 /** Coquille de /admin : connexion tant que la session n’est pas valide, puis en-tête, onglets et contenu. */
 export default function AdminLayout() {
@@ -53,6 +69,7 @@ export default function AdminLayout() {
               <li key={t.to}>
                 <NavLink to={t.to} end={t.end}>
                   {t.label}
+                  {t.to === "/admin/avis" && <UnreadCount />}
                 </NavLink>
               </li>
             ))}

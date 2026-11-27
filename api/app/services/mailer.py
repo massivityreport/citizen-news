@@ -59,3 +59,24 @@ def login_message(link: str, ttl_minutes: int) -> tuple[str, str]:
         "Si vous n'avez rien demandé, ignorez simplement ce message.\n"
     )
     return subject, body
+
+
+SUBJECT_QUOTE_LENGTH = 60
+
+
+def reply_message(opinion: str, reply: str) -> tuple[str, str]:
+    """The e-mail answering an opinion: the subject quotes its start (cut at a word) so the author recognises it."""
+    line = " ".join(opinion.split())
+    if len(line) > SUBJECT_QUOTE_LENGTH:
+        cut = line[:SUBJECT_QUOTE_LENGTH]
+        line = (cut.rsplit(" ", 1)[0] if " " in cut else cut).rstrip(" ,;:.-") + "…"
+    subject = f"Citizen News : réponse à votre avis « {line} »"
+    body = (
+        "Bonjour,\n\n"
+        "Merci pour votre avis sur Citizen News. Voici notre réponse :\n\n"
+        f"{reply}\n\n"
+        "Pour rappel, votre avis :\n"
+        + "\n".join(f"> {row}" for row in opinion.strip().splitlines())
+        + "\n\nL'équipe Citizen News\n"
+    )
+    return subject, body

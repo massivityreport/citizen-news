@@ -204,3 +204,67 @@ export interface AdminPreview {
   next: AdminPreviewItem[];
   ties: AdminPreviewTie[];
 }
+
+export type FeedbackKind = "problem" | "idea" | "other";
+
+/** Corps de POST /api/feedback. `email` n'est envoyé que sans session (le serveur utilise celui de la session sinon). */
+export interface FeedbackInput {
+  kind: FeedbackKind;
+  message: string;
+  email?: string;
+  page_name: string;
+  page_url: string;
+  screen: string;
+  /** Le parcours récent, seulement si l'utilisateur l'a joint (20 actions au plus). */
+  recent_actions?: RecentAction[];
+}
+
+/** Une action du parcours récent (joint à l'avis sur demande). `page` : chemin sans paramètres ; `topic_id` : sujets seulement. */
+export interface RecentAction {
+  type: "page" | "topic_added" | "topic_removed" | "login";
+  at: string;
+  page?: string;
+  topic_id?: number;
+}
+
+/** Une ligne de la liste des avis (backoffice). `answered` : au moins une réponse a été envoyée par e-mail. */
+export interface AdminFeedbackItem {
+  id: number;
+  created_at: string;
+  kind: FeedbackKind;
+  email: string;
+  page_name: string;
+  page_url: string;
+  excerpt: string;
+  is_read: boolean;
+  answered: boolean;
+}
+
+export interface AdminFeedbackPage extends Page<AdminFeedbackItem> {
+  unread_count: number;
+}
+
+/** Une réponse envoyée par e-mail à l'auteur d'un avis. */
+export interface AdminFeedbackReply {
+  id: number;
+  created_at: string;
+  message: string;
+}
+
+export interface AdminFeedbackDetail {
+  id: number;
+  created_at: string;
+  kind: FeedbackKind;
+  email: string;
+  message: string;
+  page_name: string;
+  page_url: string;
+  screen: string;
+  browser: string;
+  /** Le parcours récent, null si le visiteur ne l'a pas joint. */
+  recent_actions: RecentAction[] | null;
+  is_read: boolean;
+  answered: boolean;
+  /** Du plus ancien au plus récent. */
+  replies: AdminFeedbackReply[];
+}

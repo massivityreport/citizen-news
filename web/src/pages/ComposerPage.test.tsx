@@ -9,6 +9,7 @@ import { res, stubFetch, type Handler } from "../test/api-stub";
 import { card, pool, une } from "../test/topics";
 import { DRAFT_KEY } from "../lib/draft";
 import { draftStore } from "../lib/draftStore";
+import { journal } from "../lib/journal";
 import { getSeed } from "../lib/browse";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -57,6 +58,32 @@ const swipe = (dx: number, dy: number) => {
 };
 const add = () => userEvent.click(screen.getByRole("button", { name: "Ajouter à ma une" }));
 const next = () => userEvent.click(screen.getByRole("button", { name: /Suivant/ }));
+
+describe("Composer : journal du parcours", () => {
+  it("l'ajout puis le retrait d'un sujet entrent au journal (brouillon local)", async () => {
+    mount();
+    renderPage();
+    await screen.findByRole("heading", { level: 3, name: "Sujet 1" });
+    await add();
+    await userEvent.click(await screen.findByRole("button", { name: "Retirer de ma une" }));
+    expect(journal.get().filter((a) => a.type !== "page").map(({ type, topic_id }) => ({ type, topic_id }))).toEqual([
+      { type: "topic_added", topic_id: 1 },
+      { type: "topic_removed", topic_id: 1 },
+    ]);
+  });
+
+  it("connecté : l'ajout n'entre au journal qu'une fois accepté par le serveur", async () => {
+    mount({
+      me: true,
+      routes: { "PUT /api/me/une/topics/1": () => res(409, { detail: "Une complète." }) },
+    });
+    renderPage();
+    await screen.findByRole("heading", { level: 3, name: "Sujet 1" });
+    await add();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Ajouter à ma une" })).toBeInTheDocument());
+    expect(journal.get().filter((a) => a.type === "topic_added")).toEqual([]);
+  });
+});
 
 describe("Composer : écran principal", () => {
   it("nom, heure, jauge, aperçu, onglets, carte et boutons", async () => {
