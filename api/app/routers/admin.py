@@ -17,18 +17,15 @@ from app.db import get_session
 from app.deps import ADMIN_COOKIE, client_ip, require_admin
 from app.schemas import (
     AdminArticlePage, AdminLoginRequest, AdminSourceCreate, AdminSourceDeleted, AdminSourceOut, AdminStats, AdminTopicDetail,
-    AdminTopicPage, AdminVotePage,
+    AdminTopicPage,
 )
 from app.services import admin_articles as articles_service
 from app.services import admin_stats as stats_service
 from app.services import admin_topics as topics_service
 from app.services import admin as service
 from app.services import sources as sources_service
-from app.routers.topics import clear_front_cache
 from app.services.safe_fetch import fetch_public
 from app.services.ratelimit import RateLimiter, enforce, get_rate_limiter
-from config.clustering import load_clustering_params
-from config.front import load_front_params
 from config.settings import get_settings
 
 logger = logging.getLogger(__name__)
@@ -154,13 +151,12 @@ def delete_source(
 ) -> AdminSourceDeleted:
     try:
         deleted = sources_service.delete_source(db, source_id, confirm)
-        clear_front_cache()  # the public front must not keep showing the deleted articles (5 s cache, this process)
         return AdminSourceDeleted(id=source_id, deleted_articles=deleted)
     except sources_service.SourceError as exc:
         raise _refuse(exc) from None
 
 
-# --- Articles, topics, votes (read only) ---
+# --- Articles, topics (read only) ---
 
 MAX_PAGE = 100_000
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -210,27 +206,16 @@ def list_articles(
 def list_topics(
     page: PageNumber = 1,
     page_size: PageSize = 50,
-    sort: Literal["title", "state", "votes", "articles", "state_changed"] = "votes",
+    sort: Literal["title", "articles", "updated"] = "updated",
     order: Literal["asc", "desc"] = "desc",
-    state: Literal["new", "active", "reserve", "emerged"] | None = None,
     db: Session = Depends(get_session),
 ) -> AdminTopicPage:
-    return topics_service.list_topics(db, state, sort, order, page, page_size)
+    return topics_service.list_topics(db, sort, order, page, page_size)
 
 
 @protected.get("/topics/{topic_id}", response_model=AdminTopicDetail)
 def get_topic(topic_id: int, db: Session = Depends(get_session)) -> AdminTopicDetail:
-    detail = topics_service.topic_detail(db, topic_id, load_clustering_params(), load_front_params())
+    detail = topics_service.topic_detail(db, topic_id)
     if detail is None:
         raise HTTPException(status_code=404, detail="Sujet introuvable.")
     return detail
-
-
-@protected.get("/topics/{topic_id}/votes", response_model=AdminVotePage)
-def get_topic_votes(
-    topic_id: int, page: PageNumber = 1, page_size: PageSize = 50, db: Session = Depends(get_session)
-) -> AdminVotePage:
-    votes = topics_service.topic_votes(db, topic_id, page, page_size)
-    if votes is None:
-        raise HTTPException(status_code=404, detail="Sujet introuvable.")
-    return votes

@@ -303,9 +303,9 @@ def test_unknown_source_is_404(admin, action):
     assert admin.post(f"/api/admin/sources/999/{action}").status_code == 404
 
 
-def test_inactive_source_articles_still_count_for_the_front_and_the_cards(admin, session):
+def test_inactive_source_articles_still_count_for_eligibility_and_the_cards(admin, session):
     """Wanted: history is kept. A deactivated source's articles keep their topics eligible and visible."""
-    from app.services.topics import eligible_topics
+    from app.services.topics import build_cards, eligible_topics
     from config.clustering import load_clustering_params
 
     a, b = make_sources(session, "A", "B")
@@ -313,10 +313,10 @@ def test_inactive_source_articles_still_count_for_the_front_and_the_cards(admin,
     session.commit()
     admin.post(f"/api/admin/sources/{a.id}/deactivate")
     session.expire_all()
-    assert len(session.scalars(eligible_topics(load_clustering_params())).all()) == 1
-    front = admin.get("/api/topics/front").json()
-    assert [t["title"] for t in front["items"]] == ["Sujet visible"]
-    assert sorted(s["name"] for s in front["items"][0]["sources"]) == ["A", "B"]
+    eligible = session.scalars(eligible_topics(load_clustering_params())).all()
+    assert len(eligible) == 1
+    (card,) = build_cards(session, eligible)
+    assert card.title == "Sujet visible" and sorted(s.name for s in card.sources) == ["A", "B"]
 
 
 def test_clustering_still_groups_with_articles_of_an_inactive_source(admin, session):
@@ -395,21 +395,22 @@ def test_adding_a_deleted_url_again_is_allowed_and_forgets_the_deletion(admin, s
 
 
 def test_topics_losing_their_articles_stay_consistent(admin, session):
-    """A topic that loses one of its two media drops out of the front (not enough distinct sources);
-    one that loses all its articles is hidden everywhere and keeps its votes. Nothing breaks."""
-    from tests.helpers import add_votes
+    """A topic that loses one of its two media is no longer eligible (not enough distinct sources);
+    one that loses all its articles stays as a row. Nothing breaks."""
+    from app.services.topics import eligible_topics
+    from config.clustering import load_clustering_params
+
+    def eligible_titles():
+        session.expire_all()
+        return {t.title for t in session.scalars(eligible_topics(load_clustering_params()))}
 
     a, b, c = make_sources(session, "A", "B", "C")
     shared = make_topic(session, "Partagé", [a, b])
     only_a = make_topic(session, "Seulement A", [a])
-    other = make_topic(session, "Autre", [b, c])
-    add_votes(session, only_a, more=2)
+    make_topic(session, "Autre", [b, c])
     session.commit()
-    assert {t["title"] for t in admin.get("/api/topics/front").json()["items"]} == {"Partagé", "Autre"}
+    assert eligible_titles() == {"Partagé", "Autre"}
     assert admin.delete(f"/api/admin/sources/{a.id}?confirm=2").status_code == 200
-    items = admin.get("/api/topics/front").json()["items"]
-    assert {t["title"] for t in items} == {"Autre"}
-    session.expire_all()
+    assert eligible_titles() == {"Autre"}
     assert session.get(Topic, only_a.id) is not None and session.get(Topic, shared.id) is not None  # not orphaned rows
-    nxt = admin.get("/api/vote/next?count=10")
-    assert nxt.status_code == 200 and only_a.id not in {t["id"] for t in nxt.json()["items"]}
+    assert admin.get(f"/api/admin/topics/{only_a.id}").json()["article_count"] == 0

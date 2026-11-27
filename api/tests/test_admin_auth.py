@@ -64,8 +64,6 @@ def test_citizen_session_gives_no_admin_access(logged):
 
 def test_admin_cookie_gives_no_citizen_access(admin):
     assert admin.get("/api/me").status_code == 401
-    assert admin.post("/api/votes", json={"topic_id": 1, "choice": "more"}).status_code == 401
-    assert admin.get("/api/votes/mine").status_code == 401
 
 
 def test_all_admin_routes_except_login_and_logout_are_protected(client):
