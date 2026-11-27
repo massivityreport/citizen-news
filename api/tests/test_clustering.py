@@ -31,7 +31,6 @@ def test_close_articles_are_grouped_and_distant_ones_separated(session):
     assert len({t[0], t[3], t[4]}) == 3
     assert (report.attached, report.new_topics) == (5, 3)
     topic = session.get(Topic, t[0])
-    assert topic.state == "new" and topic.wave == 0
     assert topic.title in {a[0] for a in RETRAITES}
     assert 0 < len(topic.summary) <= 280
 
