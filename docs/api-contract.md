@@ -177,7 +177,7 @@ Les sources médias sont gérées en base : **la base est la référence**, `api
 | `POST /api/admin/sources/{id}/reactivate` | `200` → la source, `active: true`. Idempotent. `404` si inconnue. |
 | `DELETE /api/admin/sources/{id}?confirm=<n>` | Suppression **définitive**. `confirm` (entier ≥ 0, obligatoire) doit être le nombre d'articles qui disparaissent (`article_count`). `200` → `{"id", "deleted_articles"}` · `409` si `confirm` ne correspond pas (rien n'est supprimé ; le message donne le vrai nombre) · `404` · `422` si `confirm` manque ou n'est pas un entier. |
 
-**Ajout** (`POST`). Le nom est nettoyé (espaces et caractères de contrôle) : 1 à 100 caractères. L'URL : `http` ou `https` seulement, 2048 caractères au plus, sans espace ni `\`, sans identifiants (`user:pass@`) ; schéma et hôte sont mis en minuscules, le fragment (`#…`) est retiré. Ordre des contrôles, le premier qui échoue répond :
+**Ajout** (`POST`). Le nom est nettoyé (espaces et caractères de contrôle) : 1 à 100 caractères. L'URL : `http` ou `https` seulement, 2048 caractères au plus, sans espace ni `\`, sans identifiants (`user:pass@`) ; schéma et hôte sont mis en minuscules, le fragment (`#…`) est retiré (même forme normale pour `feeds.yaml` et les suppressions : une variante de casse n'est ni un doublon ni une recréation). Ordre des contrôles, le premier qui échoue répond :
 
 1. `422` entrée invalide (nom vide ou trop long, schéma, identifiants, URL trop longue…), message précis en français ; aucune requête réseau.
 2. `409` `Cette source existe déjà (elle est peut-être désactivée).` (doublon d'URL, source désactivée comprise) ; aucune requête réseau.
@@ -189,11 +189,13 @@ Ré-ajouter l'URL d'une source supprimée définitivement est permis ; elle quit
 **Garde SSRF** (le serveur va chercher l'URL). Appliquée à l'URL et à **chaque** redirection (suivies à la main, 5 au plus, schéma http(s) seulement, `Location` revérifiée) :
 
 - hôte : nom DNS ordinaire ou IP littérale publique ; `localhost` et `*.localhost` refusés ; formes d'IP exotiques (`2130706433`, `0x7f000001`, `127.1`) refusées ;
-- le nom est résolu **une fois** et **toutes** les adresses doivent être publiques : refus des adresses privées, loopback, link-local (dont `169.254.169.254`, métadonnées cloud), non spécifiées (`0.0.0.0`, `::`), partagées (`100.64/10`), réservées, multicast, IPv6 locales (`::1`, `fe80::`, `fc00::`) et IPv6 mappées IPv4 (`::ffff:10.0.0.1`, jugées comme l'IPv4 qu'elles contiennent) ;
+- le nom est résolu **une fois** et **toutes** les adresses doivent être publiques : refus des adresses privées, loopback, link-local (dont `169.254.169.254`, métadonnées cloud), non spécifiées (`0.0.0.0`, `::`), partagées (`100.64/10`), réservées, multicast, IPv6 locales (`::1`, `fe80::`, `fc00::`) et IPv6 qui encapsulent une IPv4 (mappées `::ffff:10.0.0.1`, NAT64 `64:ff9b::7f00:1`, SIIT `::ffff:0:127.0.0.1`, compatibles `::127.0.0.1`, 6to4 `2002:7f00:1::` : jugées comme l'IPv4 qu'elles contiennent), préfixe NAT64 local `64:ff9b:1::/48`, site-local `fec0::/10`, `192.0.0.0/24` ;
 - la connexion se fait vers l'IP validée (en-tête `Host` et SNI/certificat TLS conservés) : une réponse DNS qui change entre la vérification et la connexion (DNS rebinding) ne détourne pas la requête ;
-- variables proxy de l'environnement ignorées ; 10 s au total, 5 Mo décodés au plus.
+- variables proxy de l'environnement ignorées ; réponse non compressée (`Accept-Encoding: identity`) ; 10 s au total, 5 Mo au plus ;
+- la même garde protège l'ingestion périodique de chaque source (celles de `feeds.yaml` comprises), pas seulement l'ajout ;
+- limite : la résolution DNS (`getaddrinfo`) n'a pas de délai propre, le délai de 10 s n'est vérifié qu'entre les étapes.
 
-**Suppression** : les articles partent en cascade, l'URL est mémorisée dans `deleted_sources` pour que l'initialisation depuis `feeds.yaml` ne recrée pas la source. Un sujet qui perd des articles n'est pas supprimé (ses votes sont conservés) : s'il lui reste moins de médias distincts que le minimum pour la une, ou plus aucun article, il n'apparaît plus sur la une ni dans le flux de vote ; son titre et son résumé ne changent qu'au prochain regroupement qui lui rattache un article.
+**Suppression** : les articles partent en cascade, l'URL est mémorisée dans `deleted_sources` pour que l'initialisation depuis `feeds.yaml` ne recrée pas la source. Un sujet qui perd des articles n'est pas supprimé (ses votes sont conservés) : s'il lui reste moins de médias distincts que le minimum pour la une, ou plus aucun article, il n'apparaît plus sur la une ni dans le flux de vote ; son titre et son résumé ne changent qu'au prochain regroupement qui lui rattache un article : un sujet mixte garde donc, après la suppression, un titre calculé avec l'ancien article.
 
 ## Halving
 
