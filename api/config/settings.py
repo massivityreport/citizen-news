@@ -71,7 +71,6 @@ class Settings(BaseSettings):
             return [o.strip() for o in value.split(",") if o.strip()]
         return value
 
-
     @field_validator("edition_timezone")
     @classmethod
     def _known_timezone(cls, value: str) -> str:

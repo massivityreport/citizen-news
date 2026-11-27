@@ -73,7 +73,7 @@ def verify(
 
 def _merge_draft(db: Session, account: Account, topic_ids: list[int], at: datetime) -> DraftResult | None:
     """Merge the draft into the account's une if the edition is open (same rule as /me/une/merge).
-    Never fails the login, never logs the draft."""
+    Never fails the login (on failure: added 0, everything ignored), never logs the draft."""
     if not topic_ids:
         return None
     try:
@@ -83,7 +83,7 @@ def _merge_draft(db: Session, account: Account, topic_ids: list[int], at: dateti
     except Exception:
         logger.error("Échec de la fusion du brouillon", exc_info=False)
         db.rollback()
-        return None
+        return DraftResult(added=0, ignored=len(topic_ids))  # the citizen learns the draft was not taken
     return DraftResult(added=result.added, ignored=result.ignored)
 
 

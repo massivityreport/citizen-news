@@ -181,5 +181,5 @@ def test_a_merge_failure_does_not_block_the_login(api, mails, ids, monkeypatch):
 
     monkeypatch.setattr(une, "merge", boom)
     browser, r = login(api, mails, {"topic_ids": ids[:2]})
-    assert r.status_code == 200 and r.json()["draft"] is None
+    assert r.status_code == 200 and r.json()["draft"] == {"added": 0, "ignored": 2}
     assert browser.get("/api/me").status_code == 200

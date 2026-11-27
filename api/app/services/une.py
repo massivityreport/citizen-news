@@ -143,7 +143,8 @@ def remove_topic(session: Session, account_id: int, topic_id: int, now: datetime
 
 
 def replace(session: Session, account_id: int, topic_ids: list[int], now: datetime) -> Une:
-    """Make the une exactly `topic_ids` (deduplicated, <= 10, existing topics; the pool is not required here).
+    """Make the une exactly `topic_ids` (deduplicated, <= 10, existing topics; the pool is not required here:
+    the CLOSING only counts the topics that pass `eligible_pool` at closing time, others stay but score nothing).
     Topics already in the une keep their place; new ones follow in the given order."""
     topic_ids = dedupe(topic_ids)
     if len(topic_ids) > MAX_UNE_TOPICS:

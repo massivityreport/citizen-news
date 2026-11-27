@@ -214,3 +214,12 @@ def test_eligible_pool_single_aggregated_query_and_topic_filter(session, media):
     finally:
         event.remove(get_engine(), "before_cursor_execute", listener)
     assert len(n) == 2
+
+
+def test_future_dated_articles_do_not_keep_a_topic_in_the_pool(pooled, session, media):
+    stale = make_topic(session, "vieux", media[:2], hours_ago=30, now=NOW)
+    make_article(session, media[2], "futur", "Date folle", hours_ago=-72, now=NOW, topic_id=stale.id)  # 3 days ahead
+    ok = make_topic(session, "ok", media[:2], hours_ago=30, now=NOW)
+    make_article(session, media[2], "bientot", "Horloge en avance", hours_ago=-0.5, now=NOW, topic_id=ok.id)  # within 1 h: kept
+    session.commit()
+    assert ids(pool(pooled)) == [ok.id]

@@ -2,7 +2,8 @@
 
 `eligible_pool` is THE eligibility rule: the pool endpoint, the une writes and the closing (aggregation) all
 call it, never a copy of it. A topic is eligible when
-- one of its articles is dated within the last POOL_WINDOW_HOURS (article date = published_at, else fetched_at), and
+- one of its articles is dated within the last POOL_WINDOW_HOURS (article date = published_at, else fetched_at;
+  dates more than 1 h in the future are ignored), and
 - its articles come from at least `min_sources_for_front` DISTINCT media (all its articles count, as in the cards).
 One aggregated query whatever the number of topics.
 """
@@ -20,6 +21,7 @@ from config.clustering import load_clustering_params
 from config.settings import get_settings
 
 POOL_CAP = 300
+FUTURE_TOLERANCE = timedelta(hours=1)
 Tab = Literal["random", "recent", "radar"]
 
 
@@ -41,7 +43,8 @@ def eligible_pool(session: Session, now: datetime | None = None, topic_ids: list
         .join(Article, Article.topic_id == Topic.id)
         .group_by(Topic.id)
         .having(
-            func.max(day) >= cutoff,
+            # An article dated in the future (feed clock error) never keeps a topic in the pool: 1 h of tolerance.
+            func.max(day).filter(day <= now + FUTURE_TOLERANCE) >= cutoff,
             func.count(func.distinct(Article.source_id)) >= load_clustering_params().min_sources_for_front,
         )
     )
