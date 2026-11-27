@@ -197,3 +197,87 @@ def test_writes_refused_after_closing_even_before_the_worker_publishes_then_the_
     body = logged.get("/api/me/une").json()
     assert (body["edition_date"], body["open"], body["topic_ids"]) == ("2026-11-28", True, [])
     assert logged.put(f"/api/me/une/topics/{a.id}").status_code == 200
+
+
+def _hold(monkeypatch, module, name, started, release):
+    """Wrap module.name so that it signals `started`, then waits for `release`, before running."""
+    real = getattr(module, name)
+
+    def wrapper(*a, **kw):
+        started.set()
+        assert release.wait(20)
+        return real(*a, **kw)
+
+    monkeypatch.setattr(module, name, wrapper)
+
+
+def test_a_write_in_flight_at_closing_is_counted(session, media, monkeypatch):
+    """The write holds the shared lock after its checks; the closing (exclusive) waits for its commit."""
+    from app.services import une
+    from tests.helpers import make_accounts
+
+    t = topic(session, media)
+    [acct] = make_accounts(session, 1)
+    previous_edition(session)
+    started, release, out = threading.Event(), threading.Event(), {}
+    _hold(monkeypatch, une, "_insert", started, release)
+
+    def write():
+        with Session(get_engine()) as s:
+            une.add_topic(s, acct, t.id, CLOSING - timedelta(minutes=1))
+
+    def close():
+        with Session(get_engine()) as s:
+            edition = close_due_edition(s, CLOSING)
+            out["edition"] = edition and edition.participants
+
+    writer = threading.Thread(target=write)
+    writer.start()
+    assert started.wait(20)
+    closer = threading.Thread(target=close)
+    closer.start()
+    closer.join(1)
+    assert closer.is_alive(), "the closing must wait for the write in flight"
+    release.set()
+    writer.join(20)
+    closer.join(20)
+    assert out["edition"] == 1
+    session.expire_all()
+    assert session.scalar(select(EditionTopic.approvals)) == 1
+
+
+def test_a_write_started_during_the_closing_goes_to_tomorrow(session, media, monkeypatch):
+    from app.models.entities import Selection
+    from app.services import une
+    from tests.helpers import make_accounts
+
+    t = topic(session, media)
+    [acct] = make_accounts(session, 1)
+    previous_edition(session)
+    session.commit()
+    started, release, out = threading.Event(), threading.Event(), {}
+    _hold(monkeypatch, edition_close, "aggregate", started, release)
+
+    def close():
+        with Session(get_engine()) as s:
+            edition = close_due_edition(s, CLOSING)
+            out["edition"] = edition and edition.participants
+
+    def write():
+        with Session(get_engine()) as s:
+            out["une"] = une.add_topic(s, acct, t.id, CLOSING + timedelta(seconds=1))
+
+    closer = threading.Thread(target=close)
+    closer.start()
+    assert started.wait(20)
+    writer = threading.Thread(target=write)
+    writer.start()
+    writer.join(1)
+    assert writer.is_alive(), "the write must wait for the closing"
+    release.set()
+    closer.join(20)
+    writer.join(20)
+    assert out["edition"] == 0
+    assert out["une"].state.edition_date == date(2026, 11, 28) and out["une"].state.open
+    session.expire_all()
+    assert [s.edition_date for s in session.scalars(select(Selection))] == [date(2026, 11, 28)]
