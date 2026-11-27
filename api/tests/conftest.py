@@ -45,7 +45,7 @@ def session(database_url):
         yield s
         s.rollback()
         # Clean tables between tests (CASCADE handles FKs).
-        s.execute(text("TRUNCATE votes, articles, topics, accounts, login_tokens, sessions, admin_sessions, media_sources, deleted_sources RESTART IDENTITY CASCADE"))
+        s.execute(text("TRUNCATE selections, edition_topics, editions, articles, topics, accounts, login_tokens, sessions, admin_sessions, media_sources, deleted_sources RESTART IDENTITY CASCADE"))
         s.commit()
 
 
@@ -56,15 +56,6 @@ def client(database_url, session):  # `session` truncates tables after each test
     from app.main import create_app
 
     return TestClient(create_app())
-
-
-@pytest.fixture(autouse=True)
-def _no_stale_front_cache():
-    from app.routers.topics import clear_front_cache
-
-    clear_front_cache()
-    yield
-    clear_front_cache()
 
 
 @pytest.fixture(autouse=True)

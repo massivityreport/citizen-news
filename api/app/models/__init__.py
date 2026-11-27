@@ -2,13 +2,18 @@ from app.models.base import Base
 from app.models.entities import (
     Account,
     AdminSession,
-    AuthSession,
     Article,
+    AuthSession,
     DeletedSource,
+    Edition,
+    EditionTopic,
     LoginToken,
     MediaSource,
+    Selection,
     Topic,
-    Vote,
 )
 
-__all__ = ["Base", "Account", "AdminSession", "AuthSession", "Article", "DeletedSource", "LoginToken", "MediaSource", "Topic", "Vote"]
+__all__ = [
+    "Base", "Account", "AdminSession", "AuthSession", "Article", "DeletedSource", "Edition", "EditionTopic",
+    "LoginToken", "MediaSource", "Selection", "Topic",
+]
