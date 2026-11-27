@@ -168,8 +168,8 @@ export function useAdminEditions(params: Record<string, string>) {
   return useQuery({ queryKey: adminEditionsKey(params), queryFn: () => api.adminEditions(params), placeholderData: keepPreviousData });
 }
 
-export function useAdminEdition(date: string) {
-  return useQuery({ queryKey: adminEditionKey(date), queryFn: () => api.adminEdition(date) });
+export function useAdminEdition(date: string, enabled = true) {
+  return useQuery({ queryKey: adminEditionKey(date), queryFn: () => api.adminEdition(date), enabled });
 }
 
 /** Aperçu de la une : calculé à la demande (bouton « Recalculer »), jamais rafraîchi tout seul. */

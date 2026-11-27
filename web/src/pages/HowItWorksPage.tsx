@@ -102,6 +102,10 @@ export default function HowItWorksPage() {
             sujet.
           </li>
           <li>
+            <strong>Seuls les sujets encore dans la liste à la clôture comptent</strong> : si un sujet a quitté la liste avant 17 h, les
+            approbations qu’il avait reçues ne sont pas retenues.
+          </li>
+          <li>
             <strong>Les sujets du jour</strong> sont ceux qui comptent au moins un article publié dans les dernières 24 heures. Un sujet plus
             ancien sort de la liste quand plus aucun média n’en parle.
           </li>
@@ -128,7 +132,7 @@ export default function HowItWorksPage() {
 
       <Section id="recents-radar">
         <h3>Récents</h3>
-        <p>Les sujets les plus récemment mis à jour (un nouvel article est arrivé) en premier.</p>
+        <p>Les sujets classés selon leur date de dernière mise à jour, du plus récent au plus ancien.</p>
         <h3>Sous les radars</h3>
         <p>
           Les sujets couverts par <strong>peu de médias : trois au plus</strong>. Seule compte la faible couverture médiatique : le sujet n’est

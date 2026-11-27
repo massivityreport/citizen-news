@@ -39,6 +39,12 @@ export function installMocks() {
     const path = url.pathname.replace(/^\/api/, "");
     const route = `${method} ${path}`;
 
+    const detail = /^GET \/admin\/editions\/(\d{4}-\d{2}-\d{2})$/.exec(route);
+    if (detail) {
+      const found = editions.find((e) => e.date === detail[1]);
+      return found ? json(200, found) : json(404, { detail: "Édition introuvable." });
+    }
+
     switch (route) {
       case "GET /admin/me":
         return json(200, { authenticated: true });
@@ -48,6 +54,9 @@ export function installMocks() {
           source_count: 2 + (rank % 4), article_count: 4 + rank, updated_at: new Date(Date.now() - rank * 1_800_000).toISOString(),
           tied_with: [] as number[], broken_by: null as string | null, ...over,
         });
+        if (new URLSearchParams(window.location.search).get("mock") === "vide") {
+          return json(200, { computed_at: new Date().toISOString(), edition_date: new Date().toISOString().slice(0, 10), participants: 0, topics: [], next: [], ties: [] });
+        }
         const topics = Array.from({ length: 10 }, (_, i) => item(i + 1));
         topics[9] = item(10, { approvals: 30, proportion: 0.3, tied_with: [11], broken_by: "updated_at" });
         const next = Array.from({ length: 10 }, (_, i) => item(i + 11));
@@ -55,6 +64,18 @@ export function installMocks() {
         return json(200, {
           computed_at: new Date().toISOString(), edition_date: new Date().toISOString().slice(0, 10), participants: 100, topics, next,
           ties: [{ approvals: 30, topic_ids: [10, 11], broken_by: "updated_at", crosses_cut: true }],
+        });
+      }
+      case "GET /admin/editions": {
+        const empty = new URLSearchParams(window.location.search).get("mock") === "vide";
+        const all = empty ? [] : editions;
+        const pageSize = Number(url.searchParams.get("page_size") ?? 50);
+        const page = Number(url.searchParams.get("page") ?? 1);
+        return json(200, {
+          items: all.slice((page - 1) * pageSize, page * pageSize).map((e) => ({
+            date: e.date, published_at: e.published_at, participants: e.participants, topic_count: e.topics.length,
+          })),
+          total: all.length, page, page_size: pageSize,
         });
       }
       case "GET /edition/current": {

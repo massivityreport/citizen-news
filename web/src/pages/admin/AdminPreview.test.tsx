@@ -141,6 +141,33 @@ describe("aperçu de la une", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
+  it("recalcul en échec : anciennes données conservées et message", async () => {
+    let n = 0;
+    stubFetch({ ...ME, "GET /api/admin/edition/preview": () => (++n === 1 ? res(200, preview({ participants: 321 })) : res(500, {})) });
+    open();
+    await screen.findByText("321", { selector: "dd" });
+    await userEvent.click(screen.getByRole("button", { name: "Recalculer" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Le recalcul a échoué");
+    expect(screen.getByText("321", { selector: "dd" })).toBeInTheDocument();
+    expect(screen.getAllByRole("table")).toHaveLength(2);
+  });
+
+  it("plusieurs égalités qui franchissent la coupure : une seule alerte", async () => {
+    stubFetch({
+      ...ME,
+      "GET /api/admin/edition/preview": () =>
+        res(200, preview({
+          ties: [
+            { approvals: 30, topic_ids: [10, 11], broken_by: "updated_at", crosses_cut: true },
+            { approvals: 30, topic_ids: [10, 12], broken_by: "id", crosses_cut: true },
+          ],
+        })),
+    });
+    open();
+    await screen.findByRole("alert");
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+  });
+
   it("401 : retour à la connexion", async () => {
     let authed = true;
     stubFetch({

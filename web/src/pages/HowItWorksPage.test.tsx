@@ -29,7 +29,7 @@ const SECTION_TITLES = [
 ];
 
 describe("Comment ça marche", () => {
-  it("titres hiérarchisés : un h1, neuf h2 ancrés, sommaire cliquable", async () => {
+  it("titres hiérarchisés : un h1, neuf sections ancrées (et le Sommaire), sommaire cliquable", async () => {
     stubFetch(routes(current()));
     renderApp("/comment-ca-marche");
     expect(await screen.findByRole("heading", { level: 1, name: "Comment ça marche" })).toBeInTheDocument();

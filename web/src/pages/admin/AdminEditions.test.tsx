@@ -91,4 +91,27 @@ describe("onglet Éditions", () => {
     open("/admin/editions/2026-01-01");
     expect(await screen.findByRole("heading", { level: 1, name: "Édition introuvable" })).toBeInTheDocument();
   });
+
+  it("détail : erreur 500, h1 et titre de document conservés", async () => {
+    stubFetch({ ...ME, "GET /api/admin/editions/2026-11-26": () => res(500, {}) });
+    open("/admin/editions/2026-11-26");
+    expect(await screen.findByRole("alert")).toHaveTextContent("Impossible de charger l’édition");
+    expect(screen.getByRole("heading", { level: 1, name: "Édition" })).toBeInTheDocument();
+    expect(document.title).toBe("Édition — Citizen News");
+  });
+
+  it("détail : chargement avec un h1", async () => {
+    stubFetch({ ...ME, "GET /api/admin/editions/2026-11-26": () => new Promise<Response>(() => {}) });
+    open("/admin/editions/2026-11-26");
+    expect(await screen.findByText("Chargement de l’édition…")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "Édition" })).toBeInTheDocument();
+  });
+
+  it("détail : date invalide, aucun appel à l’API", async () => {
+    const fn = stubFetch({ ...ME });
+    open("/admin/editions/abc");
+    expect(await screen.findByRole("heading", { level: 1, name: "Édition introuvable" })).toBeInTheDocument();
+    expect(document.title).toBe("Édition introuvable — Citizen News");
+    expect(fn.mock.calls.some(([u]) => String(u).includes("/admin/editions/"))).toBe(false);
+  });
 });

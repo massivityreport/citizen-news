@@ -9,26 +9,39 @@ import styles from "./Admin.module.css";
 export default function AdminEditionDetailPage() {
   const { date = "" } = useParams();
   const valid = EDITION_DATE_RE.test(date);
-  const edition = useAdminEdition(valid ? date : "");
-  const h1 = usePageTitle(valid ? `Édition du ${formatEditionDate(date)}` : "Édition introuvable");
+  const edition = useAdminEdition(date, valid);
+  const notFound = !valid || (edition.isError && edition.error instanceof ApiError && edition.error.status === 404);
+  const title = notFound ? "Édition introuvable" : edition.data ? `Édition du ${formatEditionDate(edition.data.date)}` : "Édition";
+  const h1 = usePageTitle(title);
   const back = <Link to="/admin/editions">← Toutes les éditions</Link>;
+  const heading = (
+    <h1 ref={h1} tabIndex={-1}>
+      {title}
+    </h1>
+  );
 
-  if (!valid || (edition.isError && edition.error instanceof ApiError && edition.error.status === 404)) {
+  if (notFound) {
     return (
       <section className={styles.section}>
         {back}
-        <h1 ref={h1} tabIndex={-1}>
-          Édition introuvable
-        </h1>
+        {heading}
         <p role="status">Cette édition n’existe pas.</p>
       </section>
     );
   }
-  if (edition.isPending) return <p role="status">Chargement de l’édition…</p>;
+  if (edition.isPending)
+    return (
+      <section className={styles.section}>
+        {back}
+        {heading}
+        <p role="status">Chargement de l’édition…</p>
+      </section>
+    );
   if (edition.isError)
     return (
       <section className={styles.section}>
         {back}
+        {heading}
         <p role="alert" className={styles.error}>
           Impossible de charger l’édition. Réessayez dans un instant.
         </p>
@@ -39,9 +52,7 @@ export default function AdminEditionDetailPage() {
   return (
     <section className={styles.section}>
       {back}
-      <h1 ref={h1} tabIndex={-1}>
-        Édition du {formatEditionDate(e.date)}
-      </h1>
+      {heading}
       <dl className={styles.stats}>
         <div>
           <dt>Publication</dt>

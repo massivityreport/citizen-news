@@ -56,16 +56,21 @@ function Ties({ ties, titles }: { ties: AdminPreviewTie[]; titles: Map<number, s
   return (
     <>
       <h2 id="egalites">Sujets à égalité</h2>
+      {ties.some((t) => t.crosses_cut) && (
+        <p role="alert" className={styles.cutAlert}>
+          Alerte : au moins une égalité franchit la coupure entre le 10<sup>e</sup> et le 11<sup>e</sup> rang (détail ci-dessous).
+        </p>
+      )}
       <ul className={styles.ties}>
         {ties.map((t) => (
           <li key={t.topic_ids.join("-")}>
             {t.crosses_cut && (
-              <p role="alert" className={styles.cutAlert}>
+              <p className={styles.cutAlert}>
                 Attention : cette égalité franchit la coupure entre le 10<sup>e</sup> et le 11<sup>e</sup> rang. Le critère de départage décide
                 quels sujets entrent dans la une.
               </p>
             )}
-            <p style={{ margin: 0 }}>
+            <p className={styles.tieLine}>
               <strong>{plural(t.approvals, "approbation", "approbations")}</strong> chacun :{" "}
               {t.topic_ids.map((id) => titles.get(id) ?? `sujet ${id}`).join(" · ")}
               <br />

@@ -9,6 +9,12 @@
   --c-on-accent: #14213d;
   --c-border: #d9d4c7;
   --c-focus: #1d4ed8;
+  --c-warn-bg: #fff3cd;
+  --c-warn-text: #4d3800;
+  --c-warn-border: #8a5a00;
+  --c-danger: #b42318;
+  --c-danger-bg: #fde7e4;
+  --c-danger-text: #8a1c12;
   --radius: 10px;
   --gutter: 1rem;
   --maxw: 60rem;
