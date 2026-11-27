@@ -51,7 +51,7 @@ class MergeOut(BaseModel):
 import re
 from typing import Annotated
 
-from pydantic import field_validator
+from pydantic import ConfigDict, field_validator, model_validator
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s.]+(\.[^@\s.]+)+$")
 
@@ -92,6 +92,38 @@ class MagicLinkRequest(BaseModel):
 
 
 FEEDBACK_MAX_LENGTH = 2000
+FEEDBACK_MAX_ACTIONS = 20
+
+
+def _clean_line(value: str) -> str:
+    value = value.strip()
+    if not value or any(ord(c) < 32 or ord(c) == 127 for c in value):
+        raise ValueError("valeur invalide")
+    return value
+
+
+class RecentAction(BaseModel):
+    """One step of the visitor's recent journey: a page opened, a topic added to / removed from the front page, a login."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["page", "topic_added", "topic_removed", "login"]
+    at: str = Field(max_length=40)
+    page: str | None = Field(None, max_length=500)
+    topic_id: int | None = Field(None, ge=1, le=2**31 - 1)
+
+    @field_validator("at", "page")
+    @classmethod
+    def _line(cls, value: str | None) -> str | None:
+        return None if value is None else _clean_line(value)
+
+    @model_validator(mode="after")
+    def _fields_match_type(self) -> "RecentAction":
+        if (self.type == "page") != (self.page is not None):
+            raise ValueError("page attendue pour une page, interdite sinon")
+        if (self.type in ("topic_added", "topic_removed")) != (self.topic_id is not None):
+            raise ValueError("topic_id attendu pour un sujet, interdit sinon")
+        return self
 
 
 class FeedbackRequest(BaseModel):
@@ -103,6 +135,7 @@ class FeedbackRequest(BaseModel):
     page_name: str = Field(max_length=200)
     page_url: str = Field(max_length=500)
     screen: str = Field(pattern=r"^\d{1,4}x\d{1,4}$")
+    recent_actions: list[RecentAction] | None = Field(None, max_length=FEEDBACK_MAX_ACTIONS)  # sent only if the visitor ticked the box
 
     @field_validator("message")
     @classmethod

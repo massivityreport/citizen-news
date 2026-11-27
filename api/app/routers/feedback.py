@@ -30,6 +30,7 @@ def send_feedback(
     db.add(Feedback(
         email=email, kind=body.kind, message=body.message, page_name=body.page_name, page_url=body.page_url,
         screen=body.screen, browser=request.headers.get("user-agent", "")[:300],
+        recent_actions=None if body.recent_actions is None else [a.model_dump(exclude_none=True) for a in body.recent_actions],
     ))
     db.commit()
     return {}

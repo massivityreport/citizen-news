@@ -144,11 +144,12 @@ Requête : `{"token": "…"}` (jeton à usage unique, durée de vie limitée).
 
 ## Avis (`POST /api/feedback`) — public
 
-Requête : `{"kind": "problem"|"idea"|"other", "message": "…", "email": "a@example.org", "page_name": "Accueil", "page_url": "/une/2026-11-26", "screen": "390x844"}`.
+Requête : `{"kind": "problem"|"idea"|"other", "message": "…", "email": "a@example.org", "page_name": "Accueil", "page_url": "/une/2026-11-26", "screen": "390x844", "recent_actions": [{"type": "page", "at": "2026-11-27T10:00:00.000Z", "page": "/archives"}]}`.
 
 - `message` : 1 à 2000 caractères après suppression des espaces de bord. `page_name` ≤ 200, `page_url` ≤ 500 (sans caractère de contrôle), `screen` = `LxH` (4 chiffres au plus chacun). Le navigateur est l'en-tête `User-Agent` (tronqué à 300).
+- `recent_actions` (optionnel, absent si l'utilisateur ne joint pas son parcours) : tableau de **20 éléments au plus** (`422` au-delà, pas de troncature silencieuse), chacun `{"type": "page"|"topic_added"|"topic_removed"|"login", "at": <horodatage ISO, 40 car. max>, "page": <chemin sans paramètres, 500 max, type page seulement>, "topic_id": <entier, types topic_* seulement>}` ; aucun autre champ.
 - **E-mail** : avec une session, l'adresse du compte est utilisée et le champ `email` du client est **ignoré** ; sans session, `email` est obligatoire et son format vérifié (`422` sinon).
-- `201 {}` si enregistré (table `feedback`, colonne `recent_actions` JSON nullable réservée au parcours récent, jamais renseignée ici) · `422` requête invalide · `429` + `Retry-After` au-delà de `RATE_LIMIT_FEEDBACK_PER_EMAIL` (5) par adresse et `RATE_LIMIT_FEEDBACK_PER_IP` (10) par IP, sur `RATE_LIMIT_WINDOW_SECONDS`. Les requêtes invalides ne consomment pas le quota.
+- `201 {}` si enregistré (table `feedback`, colonne `recent_actions` JSON nullable : le parcours récent, `NULL` s'il n'est pas joint) · `422` requête invalide · `429` + `Retry-After` au-delà de `RATE_LIMIT_FEEDBACK_PER_EMAIL` (5) par adresse et `RATE_LIMIT_FEEDBACK_PER_IP` (10) par IP, sur `RATE_LIMIT_WINDOW_SECONDS`. Les requêtes invalides ne consomment pas le quota.
 
 ## Admin
 

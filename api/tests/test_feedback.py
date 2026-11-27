@@ -108,3 +108,44 @@ def test_invalid_requests_do_not_use_the_quota(api):
     for _ in range(10):
         send(api, message="")
     assert send(api).status_code == 201
+
+
+def action(i=0, **over):
+    return {"type": "page", "at": f"2026-11-27T10:{i % 60:02d}:00.000Z", "page": f"/archives?p={i}", **over}
+
+
+def test_recent_actions_are_stored(api, session):
+    actions = [action(0), {"type": "topic_added", "at": "2026-11-27T10:01:00.000Z", "topic_id": 12},
+               {"type": "topic_removed", "at": "2026-11-27T10:02:00.000Z", "topic_id": 12},
+               {"type": "login", "at": "2026-11-27T10:03:00.000Z"}]
+    assert send(api, recent_actions=actions).status_code == 201
+    assert rows(session)[0].recent_actions == actions
+
+
+def test_recent_actions_absent_or_empty(api, session):
+    assert send(api).status_code == 201
+    assert send(api, recent_actions=[], email="b@example.org").status_code == 201
+    assert [f.recent_actions for f in rows(session)] == [None, []]
+
+
+def test_twenty_actions_accepted_twenty_one_refused(api, session):
+    assert send(api, recent_actions=[action(i) for i in range(20)]).status_code == 201
+    assert len(rows(session)[0].recent_actions) == 20
+    assert send(api, recent_actions=[action(i) for i in range(21)], email="b@example.org").status_code == 422
+    assert len(rows(session)) == 1
+
+
+@pytest.mark.parametrize("bad", [
+    "pas un tableau", {"type": "page"},
+    [{"type": "inconnu", "at": "2026-11-27T10:00:00Z"}],
+    [{"type": "page", "at": "x" * 41, "page": "/"}],
+    [{"type": "page", "at": "2026-11-27T10:00:00Z", "page": "x" * 501}],
+    [{"type": "page", "at": "2026-11-27T10:00:00Z"}],
+    [{"type": "topic_added", "at": "2026-11-27T10:00:00Z"}],
+    [{"type": "login", "at": "2026-11-27T10:00:00Z", "autre": "champ"}],
+    [{"type": "page", "at": "2026-11-27T10:00:00Z", "page": "/a\nb"}],
+    ["texte"],
+])
+def test_invalid_recent_actions_are_refused(api, session, bad):
+    assert send(api, recent_actions=bad).status_code == 422
+    assert rows(session) == []

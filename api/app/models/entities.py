@@ -183,7 +183,7 @@ class AdminSession(Base):
 
 class Feedback(Base):
     """Opinion sent from the public site. `email` is the session's address when logged in, else the typed one.
-    `recent_actions` is reserved for the recent-journey ticket (JSON list of actions, NULL until then)."""
+    `recent_actions`: the visitor's last 20 actions (JSON list), NULL when the box was left unticked."""
 
     __tablename__ = "feedback"
     __table_args__ = (CheckConstraint("kind IN ('problem', 'idea', 'other')", name="kind"),)
