@@ -133,7 +133,7 @@ Les e-mails arrivent dans l'interface de mailpit, <http://localhost:8025> (SMTP 
 Les tests utilisent une vraie base PostgreSQL (une base jetable `citizen_news_test` est créée, migrée, puis supprimée), dans un service `db-test` léger (profil `test`, données en tmpfs), séparé de `db`.
 
 ```bash
-scripts/test-api.sh                      # toute la suite (437 tests)
+scripts/test-api.sh                      # toute la suite
 scripts/test-api.sh tests/test_auth.py   # un seul fichier
 ```
 

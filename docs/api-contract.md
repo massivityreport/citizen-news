@@ -213,7 +213,7 @@ Page d'accueil du backoffice. Derrière la session admin (`401` sinon, y compris
 - **Articles** : comptés selon la date d'**ingestion** (`articles.fetched_at`, posée à l'insertion, jamais modifiée), pas la date de publication. **Votes** : date de création du vote (`votes.created_at`) ; un vote modifié plus tard garde sa date. **Votants** : comptes distincts (`count(distinct account_id)`), sur 24 h et au total.
 - **`series`** : exactement 30 entrées, un jour UTC chacune, de J−29 à aujourd'hui **compris** (aujourd'hui est une journée UTC partielle), ordre croissant, jours vides à `0`. Même convention de jours que la courbe de votes d'un sujet (`date_trunc('day')` en UTC). Les éléments plus anciens ne figurent pas dans la série mais sont comptés dans `total`.
 - **`voters` par jour n'est pas cumulable** : c'est le nombre de comptes distincts ayant voté ce jour-là. Un compte qui vote lundi et mardi compte pour 1 chaque jour ; la somme des jours dépasse `total.voters`. Un compte qui vote sur plusieurs sujets le même jour compte pour 1 votant et n votes.
-- Calculé en base par 5 requêtes agrégées (nombre constant, quel que soit le volume) ; index `ix_articles_fetched_at` et `ix_votes_created_at` (migration 0008).
+- Calculé en base par 4 requêtes agrégées (nombre constant, quel que soit le volume) ; index `ix_articles_fetched_at` et `ix_votes_created_at` (migration 0008).
 
 ### Articles, sujets et votes (lecture seule)
 

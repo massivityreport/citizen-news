@@ -1,6 +1,6 @@
 """Back office: home page statistics (aggregated counts only, nothing personal).
 
-Everything is computed by the database: five aggregate queries whatever the volume, never a table loaded in
+Everything is computed by the database: four aggregate queries whatever the volume, never a table loaded in
 memory. Days are UTC calendar days, same convention as a topic's vote curve (`admin_topics.day_bucket`).
 """
 

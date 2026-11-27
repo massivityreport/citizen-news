@@ -30,8 +30,11 @@ describe("accueil du backoffice", () => {
     open();
     const tile = async (label: string) => (await screen.findByText(label)).closest("div")!;
     expect(within(await tile("Articles (24 h)")).getByText(/^1\s234$/)).toBeInTheDocument();
+    expect(within(await tile("Articles (total)")).getByText(/^1\s234\s567$/)).toBeInTheDocument();
+    expect(within(await tile("Votes (24 h)")).getByText("56")).toBeInTheDocument();
     expect(within(await tile("Votes (total)")).getByText(/^8\s901$/)).toBeInTheDocument();
     expect(within(await tile("Votants (24 h)")).getByText("7")).toBeInTheDocument();
+    expect(within(await tile("Votants (total)")).getByText("234")).toBeInTheDocument();
     expect(screen.getAllByRole("img")).toHaveLength(3);
     expect(screen.getByRole("img", { name: /Votants distincts par jour/ })).toBeInTheDocument();
     expect(screen.getByText(/on ne peut pas additionner les jours/)).toBeInTheDocument();

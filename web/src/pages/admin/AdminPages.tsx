@@ -8,6 +8,7 @@ const number = new Intl.NumberFormat("fr-FR");
 
 const TILES: { label: string; value: (s: AdminStats) => number }[] = [
   { label: "Articles (24 h)", value: (s) => s.last_24h.articles },
+  { label: "Articles (total)", value: (s) => s.total.articles },
   { label: "Votes (24 h)", value: (s) => s.last_24h.votes },
   { label: "Votes (total)", value: (s) => s.total.votes },
   { label: "Votants (24 h)", value: (s) => s.last_24h.voters },
@@ -80,12 +81,12 @@ export function AdminHomePage() {
           {CURVES.map((c) => {
             const empty = data.series.every((d) => d[c.key] === 0);
             return (
-              <figure key={c.key} className={styles.section} style={{ margin: 0 }}>
-                <figcaption>
+              <div key={c.key} className={styles.section}>
+                <p style={{ margin: 0 }}>
                   <strong>{c.title}</strong>
                   <br />
                   <span className={styles.muted}>{c.description}</span>
-                </figcaption>
+                </p>
                 <LineChart
                   title={`${c.title}, 30 derniers jours`}
                   yLabel={c.yLabel}
@@ -98,7 +99,7 @@ export function AdminHomePage() {
                     },
                   ]}
                 />
-              </figure>
+              </div>
             );
           })}
           <p className={styles.muted}>Jours en UTC, aujourd’hui compris.</p>

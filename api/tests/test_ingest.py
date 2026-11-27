@@ -452,3 +452,24 @@ def test_seeded_urls_are_stored_normalized(session):
 
     sync_sources(session, [FeedConfig(name="Casse", feed_url="HTTPS://Casse.Example/Rss?A=1#frag")])
     assert session.scalars(select(MediaSource.feed_url)).all() == ["https://casse.example/Rss?A=1"]
+
+
+def test_reingesting_a_known_article_keeps_fetched_at(session):
+    """Back-office statistics count articles by fetched_at (ingestion day): an update never moves it."""
+    from datetime import timedelta
+
+    from app.services.ingest import ParsedArticle, upsert_articles
+    from tests.helpers import make_sources
+
+    source = make_sources(session, "A")[0]
+    first = ParsedArticle("https://a.example/x", "Titre", "Résumé", None)
+    assert upsert_articles(session, source.id, [first]) == 1
+    old = datetime(2026, 1, 1, tzinfo=UTC)
+    session.execute(Article.__table__.update().values(fetched_at=old))
+    session.commit()
+    changed = ParsedArticle("https://a.example/x", "Titre modifié", "Autre résumé", None, "https://img.example/i.jpg")
+    assert upsert_articles(session, source.id, [first, changed]) == 0  # already known: updated, not inserted
+    session.commit()
+    row = session.scalars(select(Article)).one()
+    assert row.title == "Titre modifié"  # the update did happen
+    assert row.fetched_at == old

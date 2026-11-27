@@ -67,7 +67,16 @@ def test_401_with_citizen_session(logged):
 
 # --- values ----------------------------------------------------------------
 
-def test_empty_database(admin):
+def test_empty_database(admin, monkeypatch):
+    from app.services import admin_stats
+
+    class Frozen(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return NOW
+
+    monkeypatch.setattr(admin_stats, "datetime", Frozen)
+    today = NOW.date().isoformat()
     r = admin.get(URL)
     assert r.status_code == 200
     assert r.headers["cache-control"] == "no-store"
@@ -76,7 +85,7 @@ def test_empty_database(admin):
     assert body["last_24h"] == zero and body["total"] == zero
     assert len(body["series"]) == 30
     assert all(p["articles"] == p["votes"] == p["voters"] == 0 for p in body["series"])
-    assert body["series"][-1]["date"] == datetime.now(UTC).date().isoformat()
+    assert body["series"][-1]["date"] == today
 
 
 def test_series_is_30_consecutive_utc_days_ending_today(session):
@@ -185,4 +194,4 @@ def test_constant_number_of_queries(admin, session, source, topic):
     session.commit()
     big = len(count_queries(get_engine(), lambda: admin.get(URL)))
     assert small == big
-    assert big <= 8  # 5 aggregates + the admin session check
+    assert big <= 6  # 4 aggregates + the admin session check
