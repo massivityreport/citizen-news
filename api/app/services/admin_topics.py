@@ -126,7 +126,9 @@ def topic_detail(
     voters, first_vote = session.execute(
         select(func.count(func.distinct(Vote.account_id)), func.min(Vote.created_at)).where(Vote.topic_id == topic_id)
     ).one()
-    entry = front_entry(topic, n_sources, stats, clustering, cfg, now)
+    # The front page only knows topics that have articles (it joins on them): none, never on the front.
+    entry = front_entry(topic, n_sources, stats, clustering, cfg, now) if n_articles else None
+    on_front = entry is not None
     article_rows = session.execute(
         select(Article.id, Article.title, Article.url, Article.published_at, MediaSource.id, MediaSource.name, MediaSource.active)
         .join(MediaSource, MediaSource.id == Article.source_id)
@@ -140,7 +142,7 @@ def topic_detail(
         state_changed_at=topic.state_changed_at, evaluated_at=topic.evaluated_at,
         article_count=n_articles, source_count=n_sources,
         support=AdminSupportOut(score=stats.score, level=level_for(stats, cfg), votes_count=stats.total),
-        front=AdminFrontOut(on_front=entry is not None, reason=entry.reason if entry else None),
+        front=AdminFrontOut(on_front=on_front, reason=entry.reason if on_front else None),
         votes=AdminVoteSummary(
             more=stats.more, not_priority=stats.not_priority, unknown=stats.unknown, total=stats.total,
             voters=voters, first_vote_at=first_vote, daily=_daily(session, topic_id, first_vote, now),

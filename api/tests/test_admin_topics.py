@@ -177,6 +177,20 @@ def test_topic_without_votes_or_articles(admin, session):
     assert d["front"] == {"on_front": False, "reason": None}
 
 
+def test_topic_without_articles_is_never_on_the_front(admin, session):
+    """0 articles = 0 sources: with 20 votes in favour it would pass for "under the radar", but the front page
+    (which joins on articles) never lists it."""
+    t = Topic(title="Orphelin", updated_at=datetime.now(UTC))
+    session.add(t)
+    session.flush()
+    add_votes(session, t, more=20)
+    session.commit()
+    d = detail(admin, t.id)
+    assert d["article_count"] == 0 and d["support"]["level"] != "low"
+    assert d["front"] == {"on_front": False, "reason": None}
+    assert admin.get("/api/topics/front?limit=50").json()["items"] == []
+
+
 def test_daily_curve_fills_empty_days_with_zero(admin, session):
     s1, s2 = make_sources(session, "A", "B")
     t = make_topic(session, "Courbe", [s1, s2])
