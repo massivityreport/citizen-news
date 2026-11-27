@@ -10,7 +10,7 @@ Contrat des routes de Citizen News V2 : chaque citoyen compose sa une de 10 suje
 - **Compteurs d'approbation** : jamais dans une réponse destinée à un citoyen avant la publication (ni bassin, ni `/me/une`, ni erreur). Ils apparaissent dans l'édition publiée et dans le backoffice.
 - **Remplacement net de V1** (décision de l'humain) : plus de vote, de halving, de `support`/`reason`, de `/api/topics/front`, `/api/vote/next`, `/api/votes*`, `/api/halving/config`. La migration 0009 a supprimé ces données.
 
-**État d'implémentation** — implémenté : `GET /api/health`, les éditions publiées (`GET /api/edition/current`, `/api/editions*`), l'agrégation et la clôture (worker), l'authentification avec brouillon, le bassin (`GET /api/topics/pool`), la une personnelle (`/api/me/une*`), le calendrier d'édition, le backoffice sources et articles, `GET /api/admin/topics` (+ détail) et `GET /api/admin/stats` dans leur forme réduite décrite plus bas, la `TopicCard` V2. **Cible, à venir** (tâche suivante) : aperçu et listes d'éditions admin, `approvals`/participants admin. Les sections ci-dessous marquées « (implémenté) » le sont ; les autres décrivent la cible.
+**État d'implémentation** — implémenté : `GET /api/health`, les éditions publiées (`GET /api/edition/current`, `/api/editions*`), l'agrégation et la clôture (worker), l'authentification avec brouillon, le bassin (`GET /api/topics/pool`), la une personnelle (`/api/me/une*`), le calendrier d'édition, le backoffice sources et articles, `GET /api/admin/topics` (+ détail) et `GET /api/admin/stats` dans leur forme réduite décrite plus bas, la `TopicCard` V2. Implémenté aussi : l'aperçu de l'édition, les listes d'éditions admin, `approvals`/participants admin. Les sections ci-dessous marquées « (implémenté) » le sont ; les autres décrivent la cible.
 
 ## Types communs
 
@@ -207,17 +207,17 @@ Ré-ajouter l'URL d'une source supprimée définitivement est permis ; elle quit
 
 ### Statistiques (`GET /api/admin/stats`)
 
-Page d'accueil du backoffice. Derrière la session admin (`401` sinon, y compris avec une session citoyenne). **Comptes agrégés uniquement** : ni identifiant de compte, ni adresse. Réponse **actuelle** (articles seulement) :
+Page d'accueil du backoffice. Derrière la session admin (`401` sinon, y compris avec une session citoyenne). **Comptes agrégés uniquement** : ni identifiant de compte, ni adresse. Réponse :
 
 ```json
 {
-  "last_24h": {"articles": 12},
-  "total":    {"articles": 1830},
-  "series": [{"date": "2026-10-29", "articles": 7}, …]
+  "last_24h": {"articles": 12, "participants": 8, "selections": 61},
+  "total":    {"articles": 1830, "participants": 120, "selections": 940},
+  "series": [{"date": "2026-10-29", "articles": 7, "participants": 3, "selections": 22}, …]
 }
 ```
 
-**Cible V2** (tâche admin à venir) : `participants` et `unes` (unes enregistrées) s'ajoutent à `last_24h`, `total` et à chaque point de `series`, à la place des votes et votants V1.
+`participants` = comptes distincts ayant au moins une sélection (une une non vide) ; `selections` = lignes de sélection (sujets mis en une). Daté par `selections.created_at` (même fenêtre et mêmes jours UTC que les articles). Plus de `votes` ni de `voters` (V1).
 
 - **Fenêtre « 24 h »** : glissante, `[maintenant − 24 h, maintenant]` (bornes incluses), horloge du serveur (injectable dans les tests).
 - **Articles** : comptés selon la date d'**ingestion** (`articles.fetched_at`, posée à l'insertion, jamais modifiée), pas la date de publication.
@@ -253,13 +253,13 @@ Les filtres se combinent (ET). Item :
 
 #### `GET /api/admin/topics`
 
-Paramètres : `page`, `page_size`, `sort` = `updated` (défaut, `updated_at`) | `title` | `articles` ; `order` (défaut `desc`). Item :
+Paramètres : `page`, `page_size`, `sort` = `approvals` (défaut) | `title` | `articles` | `updated` ; `order` (défaut `desc`). Item :
 
 ```json
-{ "id": 7, "title": "Retraites", "updated_at": "2026-11-26T09:30:00Z", "article_count": 5, "source_count": 3, "image_url": "https://…" }
+{ "id": 7, "title": "Retraites", "article_count": 5, "source_count": 3, "updated_at": "2026-11-26T09:30:00Z", "approvals": 12, "image_url": "https://…" }
 ```
 
-`source_count` : médias distincts. `image_url` : image du plus récent article qui en a une (comme les cartes citoyennes), ou `null`. Agrégats calculés par le SQL de la page (deux requêtes avec le `COUNT`). Plus de `state`, `wave`, `vote_count` ni de filtre `state` (V1). **Cible V2** : un champ `approvals` (approbations de l'édition en cours) s'ajoute avec la tâche admin.
+`source_count` : médias distincts. `image_url` : image du plus récent article qui en a une (comme les cartes citoyennes), ou `null`. Agrégats calculés par le SQL de la page (deux requêtes avec le `COUNT`). Plus de `state`, `wave`, `vote_count` ni de filtre `state` (V1). `approvals` : nombre de comptes ayant le sujet dans leur une de l'**édition en cours** (`edition_state`, y compris une édition échue non encore publiée), 0 sans approbation ; tous les sujets sont listés (pas seulement le bassin). Tri par `approvals` : mêmes règles d'ordre total (`id` en départage).
 
 #### `GET /api/admin/topics/{id}`
 
@@ -271,22 +271,24 @@ Paramètres : `page`, `page_size`, `sort` = `updated` (défaut, `updated_at`) | 
   "first_seen_at": "…", "updated_at": "…",
   "article_count": 5, "source_count": 3,
   "articles": [ { "id": 1, "title": "…", "url": "…", "source": { "id": 3, "name": "…", "active": true }, "published_at": "…|null" } ],
-  "articles_truncated": false
+  "articles_truncated": false,
+  "approvals": 12,
+  "history": [ { "edition_date": "2026-11-26", "rank": 3, "approvals": 40, "proportion": 0.333 } ]
 }
 ```
 
 - **Articles** : du plus récent au plus ancien (`published_at`, sans date en dernier, puis `id`), 200 au plus ; `articles_truncated` signale la coupe (`article_count` reste le vrai nombre).
-- **Cible V2** : `approvals` courant et historique par édition s'ajoutent avec la tâche admin.
+- **`approvals`** : approbations courantes (édition en cours). **`history`** : les éditions **publiées** où le sujet figure ou a été retenu par des comptes, les plus récentes d'abord, 30 au plus ; `rank` est `null` quand il avait des approbations sans entrer dans la une (alors `approvals` et `proportion` viennent des sélections de ce jour, sur les participants figés) ; sinon chiffres figés de l'édition. Calculé en SQL agrégé.
 
-### Éditions (cible V2, tâche admin à venir)
+### Éditions et aperçu (implémenté)
 
 | Route | Réponse |
 |---|---|
-| `GET /api/admin/edition/preview` | `{ "computed_at", "edition_date", "participants", "topics": [ItemAdmin ×≤10], "next": [ItemAdmin rangs 11–20], "ties": [{"approvals": 12, "topic_ids": [3, 9], "broken_by": "source_count\|updated_at\|id", "crosses_cut": true}] }`. Ne publie rien, ne fige rien, n'écrit rien (appelle `aggregate`). |
-| `GET /api/admin/editions` | liste `{date, published_at, participants, topic_count}` |
-| `GET /api/admin/editions/{date}` | édition avec approbations |
+| `GET /api/admin/edition/preview` | `{ "computed_at", "edition_date", "participants", "topics": [ItemAdmin ×≤10], "next": [ItemAdmin rangs 11–20], "ties": [{"approvals": 12, "topic_ids": [3, 9], "broken_by": "source_count\|updated_at\|id", "crosses_cut": true}] }`. Ne publie rien, ne fige rien, n'écrit rien : elle appelle exactement `aggregate` (celle de `close_due_edition`), pour `edition_date` = l'édition ciblée par le calendrier (`edition_state`) à l'heure du serveur ; des tests prouvent le même classement que la clôture, l'absence d'écriture et un nombre constant de requêtes. `proportion` arrondie à 3 décimales. |
+| `GET /api/admin/editions` | `{ "items": [{date, published_at, participants, topic_count}], "total", "page", "page_size" }`, plus récentes d'abord, pagination `page`/`page_size` comme les autres listes. |
+| `GET /api/admin/editions/{date}` | l'édition complète (même forme que `GET /api/editions/{date}` : approbations et proportion) · `404 {"detail": "Édition introuvable."}` · `422` si la date est mal formée. |
 
-`ItemAdmin` : `{ "rank", "topic_id", "title", "approvals", "proportion", "source_count", "article_count", "updated_at", "tied_with": [ids], "broken_by": null | "source_count" | "updated_at" | "id" }`. Jamais d'e-mail dans les réponses admin.
+`ItemAdmin` (`tied_with` : les autres sujets du même score ; `broken_by` : critère le plus profond ayant servi à départager son groupe, `null` s'il est seul) : `{ "rank", "topic_id", "title", "approvals", "proportion", "source_count", "article_count", "updated_at", "tied_with": [ids], "broken_by": null | "source_count" | "updated_at" | "id" }`. Jamais d'e-mail dans les réponses admin.
 
 ## Santé (implémenté)
 
