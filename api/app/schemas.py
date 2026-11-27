@@ -1,6 +1,6 @@
 """HTTP response models (see docs/api-contract.md)."""
 
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, Field
 
@@ -22,6 +22,14 @@ class TopicCard(BaseModel):
     first_seen_at: datetime
     updated_at: datetime
     image_url: str | None
+
+
+class PoolOut(BaseModel):
+    edition_date: date
+    closes_at: datetime
+    open: bool
+    total: int  # topics of the tab (items is capped at 300)
+    items: list[TopicCard]
 
 
 # --- Authentication ---

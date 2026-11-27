@@ -5,7 +5,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import admin, auth, health
+from app.routers import admin, auth, health, topics
 from config.settings import get_settings
 
 
@@ -25,7 +25,7 @@ def create_app() -> FastAPI:
         CORSMiddleware,
         allow_origins=settings.cors_origins,
         allow_credentials=True,  # session cookie
-        allow_methods=["GET", "POST", "DELETE"],
+        allow_methods=["GET", "POST", "PUT", "DELETE"],
         allow_headers=["Content-Type"],
     )
 
@@ -40,6 +40,8 @@ def create_app() -> FastAPI:
     async def admin_responses(request: Request, call_next):
         # Back-office answers are private: never cached, never indexed.
         response = await call_next(request)
+        if request.url.path.startswith(("/api/me", "/api/auth")):
+            response.headers["Cache-Control"] = "no-store"  # personal answers: never shared-cached
         if request.url.path.startswith("/api/admin"):
             response.headers["Cache-Control"] = "no-store"
             response.headers["X-Robots-Tag"] = "noindex"
@@ -47,6 +49,7 @@ def create_app() -> FastAPI:
 
     app.include_router(health.router, prefix="/api")
     app.include_router(auth.router, prefix="/api")
+    app.include_router(topics.router, prefix="/api")
     app.include_router(admin.router, prefix="/api")
     app.include_router(admin.protected, prefix="/api")
     return app
