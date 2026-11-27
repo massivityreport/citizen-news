@@ -96,3 +96,11 @@ def edition_state(session: Session, now: datetime | None = None) -> EditionState
     """State of the edition in progress at `now` (default: the real clock). One or two queries."""
     now = now or datetime.now(UTC)
     return compute_state(now, *_published_and_selections(session, now))
+
+
+def next_close_at(now: datetime) -> datetime:
+    """The next closing instant strictly after `now` (UTC). Pure: late workers do not change it."""
+    day = _today(now)
+    while closing_time(day) <= now:
+        day += timedelta(days=1)
+    return closing_time(day)
