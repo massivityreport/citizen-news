@@ -221,6 +221,11 @@ export function useSetFeedbackRead() {
 }
 
 export function useDeleteFeedback() {
-  const refresh = useRefreshFeedback();
-  return useMutation({ mutationFn: (id: number) => api.adminFeedbackDelete(id), onSettled: refresh });
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => api.adminFeedbackDelete(id),
+    // Pas le détail : il n'existe plus (le recharger donnerait un 404).
+    onSettled: () =>
+      Promise.all([qc.invalidateQueries({ queryKey: [...adminFeedbackKey, "list"] }), qc.invalidateQueries({ queryKey: adminFeedbackUnreadKey })]),
+  });
 }
