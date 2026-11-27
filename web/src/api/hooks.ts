@@ -1,5 +1,6 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { api } from "./client";
+import type { PoolTab } from "./types";
 
 export const meKey = ["me"] as const;
 
@@ -11,7 +12,41 @@ export function useLogout() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: api.logout,
-    onSuccess: () => qc.setQueryData(meKey, null),
+    onSuccess: () => {
+      qc.setQueryData(meKey, null);
+      qc.removeQueries({ queryKey: uneKey }); // la une du compte ne reste pas en mémoire
+    },
+  });
+}
+
+export const uneKey = ["une"] as const;
+export const poolKey = (tab: PoolTab, seed: string) => ["pool", tab, tab === "random" ? seed : ""] as const;
+
+const POOL_REFRESH_MS = 60_000;
+
+/**
+ * Bassin du jour. Rafraîchi chaque minute et à la reprise de focus ; l'ordre « random » dépend de la graine
+ * de la session de navigation (le client réordonne ensuite : vus d'abord).
+ */
+export function usePool(tab: PoolTab, seed: string, enabled = true) {
+  return useQuery({
+    queryKey: poolKey(tab, seed),
+    queryFn: () => api.pool(tab, tab === "random" ? seed : undefined),
+    enabled,
+    staleTime: 10_000,
+    refetchInterval: POOL_REFRESH_MS,
+    refetchOnWindowFocus: true,
+  });
+}
+
+/** Une du compte connecté (jamais sans session). */
+export function useUne(enabled: boolean) {
+  return useQuery({
+    queryKey: uneKey,
+    queryFn: api.une,
+    enabled,
+    staleTime: 60_000,
+    refetchOnWindowFocus: true,
   });
 }
 

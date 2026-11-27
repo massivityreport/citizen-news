@@ -2,11 +2,12 @@ import type { Source } from "../api/types";
 import { formatDate, safeHref } from "../lib/format";
 import styles from "./Topic.module.css";
 
-export function SourceList({ sources }: { sources: Source[] }) {
+export function SourceList({ sources, headingLevel = "h3" }: { sources: Source[]; headingLevel?: "h3" | "h4" }) {
+  const Heading = headingLevel;
   if (sources.length === 0) return null;
   return (
     <div className={styles.sources}>
-      <h3 className={styles.sourcesTitle}>{sources.length > 1 ? "Sources" : "Source"}</h3>
+      <Heading className={styles.sourcesTitle}>{sources.length > 1 ? "Sources" : "Source"}</Heading>
       <ul>
         {sources.map((s, i) => {
           const href = safeHref(s.url);

@@ -93,3 +93,12 @@ export function formatCountdown(ms: number): string {
   if (m > 0) return `${m} min ${pad(s)} s`;
   return `${s} s`;
 }
+
+/** « 17 h », « 17 h 30 » : heure locale du lecteur, à la française. */
+export function formatHour(iso: string): string {
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return "";
+  const d = new Date(t);
+  const m = d.getMinutes();
+  return m === 0 ? `${d.getHours()} h` : `${d.getHours()} h ${String(m).padStart(2, "0")}`;
+}
