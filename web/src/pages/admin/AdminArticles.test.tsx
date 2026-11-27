@@ -200,3 +200,37 @@ describe("onglet Articles", () => {
     await waitFor(() => expect(api.last().has("ungrouped")).toBe(false));
   });
 });
+
+describe("onglet Articles : sujets au-delà de la liste", () => {
+  it("indication quand il y a plus de sujets que la liste, et champ numéro de sujet", async () => {
+    const calls: URLSearchParams[] = [];
+    stubFetch({
+      "GET /api/admin/me": () => res(200, { authenticated: true }),
+      "GET /api/admin/sources": () => res(200, SOURCES),
+      "GET /api/admin/topics": () => res(200, { items: [topicRow(7, "Retraites")], total: 450, page: 1, page_size: 200 }),
+      "GET /api/admin/articles": (_i, url) => {
+        calls.push(new URLSearchParams(url.split("?")[1] ?? ""));
+        return res(200, page([article(1)]));
+      },
+    });
+    open("/admin/articles?page=2");
+    expect(await screen.findByText(/ne montre que les 1 premiers sujets sur 450/)).toBeInTheDocument();
+    const field = screen.getByLabelText("Numéro de sujet");
+    await userEvent.type(field, "0a312");
+    await waitFor(() => expect(calls[calls.length - 1].get("topic_id")).toBe("312"));
+    expect(calls[calls.length - 1].get("page")).toBe("1");
+    expect(field).toHaveValue("312");
+    expect(where()).toBe("/admin/articles?topic_id=312");
+    await waitFor(() => expect(screen.getByLabelText("Sujet")).toHaveValue("312"));
+    expect(screen.getByRole("option", { name: "Sujet n° 312" })).toBeInTheDocument();
+    await userEvent.clear(field);
+    await waitFor(() => expect(calls[calls.length - 1].has("topic_id")).toBe(false));
+  });
+
+  it("pas d’indication quand toute la liste est affichée", async () => {
+    fakeApi(() => page([article(1)]));
+    open("/admin/articles");
+    await screen.findByRole("table");
+    expect(screen.queryByText(/premiers sujets/)).toBeNull();
+  });
+});

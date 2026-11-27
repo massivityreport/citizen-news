@@ -63,6 +63,20 @@ export default function AdminArticlesPage() {
           </select>
         </label>
         <label className={styles.field}>
+          Numéro de sujet
+          <input
+            type="text"
+            inputMode="numeric"
+            value={topicId}
+            disabled={ungrouped}
+            placeholder="ex. 128"
+            onChange={(e) => {
+              const digits = e.target.value.replace(/\D/g, "").replace(/^0+/, "");
+              set({ topic_id: digits.slice(0, 9) });
+            }}
+          />
+        </label>
+        <label className={styles.field}>
           Source
           <select value={sourceId} onChange={(e) => set({ source_id: e.target.value })}>
             <option value="">Toutes les sources</option>
@@ -92,6 +106,11 @@ export default function AdminArticlesPage() {
           Non regroupés seulement
         </label>
       </form>
+      {topics.data && topics.data.total > topicOptions.length && (
+        <p className={styles.muted}>
+          La liste « Sujet » ne montre que les {topicOptions.length} premiers sujets sur {topics.data.total} (par titre) : saisissez le numéro d’un sujet pour filtrer sur les autres.
+        </p>
+      )}
       <p className={styles.muted}>Dates en UTC (jour entier, bornes incluses) ; un article sans date de publication n’apparaît pas quand une date est choisie.</p>
 
       {articles.isPending && <p role="status">Chargement des articles…</p>}

@@ -211,7 +211,7 @@ Paramètres : `page`, `page_size`, `sort` = `date` (défaut, `published_at`) | `
 
 - `topic_id` (entier ≥ 1) : articles de ce sujet ;
 - `source_id` (entier ≥ 1) ;
-- `date_from`, `date_to` : `AAAA-MM-JJ` strict (une date-heure est refusée), entre 2000 et 2100, `date_from` ≤ `date_to`, sinon `422`. Filtre sur **`published_at`**, en **UTC** : `date_from` inclus (00:00 UTC), `date_to` inclus **jour entier** (jusqu'au lendemain 00:00 UTC exclu). Un article sans date de publication est exclu dès qu'une borne est donnée (il apparaît sans filtre de date, en dernier du tri par date) ;
+- `date_from`, `date_to` : `AAAA-MM-JJ` strict (une date-heure est refusée), entre 2000 et 2100, `date_from` ≤ `date_to`, sinon `422`. Filtre sur **`published_at`**, en **UTC** : `date_from` inclus (00:00 UTC), `date_to` inclus **jour entier** (jusqu'au lendemain 00:00 UTC exclu). **Un article sans date de publication est exclu dès qu’une borne est donnée** (`published_at` nul ne satisfait aucune comparaison) (il apparaît sans filtre de date, en dernier du tri par date) ;
 - `ungrouped=true` : `topic_id IS NULL` (`false` = pas de filtre). **Incompatible avec `topic_id` → `422`** `« ungrouped » et « topic_id » s'excluent`.
 
 Les filtres se combinent (ET). Item :
