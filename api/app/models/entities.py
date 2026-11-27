@@ -3,6 +3,7 @@
 from datetime import datetime
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -12,6 +13,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    true,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -35,6 +37,18 @@ class MediaSource(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(200))
     feed_url: Mapped[str] = mapped_column(Text, unique=True)
+    # An inactive source is no longer fetched; its articles (and their topics) stay.
+    active: Mapped[bool] = mapped_column(Boolean, server_default=true())
+
+
+class DeletedSource(Base):
+    """Feed URLs an admin deleted for good: sync_sources must not re-create them from feeds.yaml."""
+
+    __tablename__ = "deleted_sources"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    feed_url: Mapped[str] = mapped_column(Text, unique=True)
+    deleted_at: Mapped[datetime] = _now()
 
 
 class Topic(Base):

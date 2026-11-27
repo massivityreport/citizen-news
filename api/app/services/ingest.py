@@ -13,7 +13,7 @@ from sqlalchemy import func, literal_column, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from app.models.entities import Article, MediaSource
+from app.models.entities import Article, DeletedSource, MediaSource
 from app.services.images import extract_image_url
 from app.services.text import clean_html, truncate
 from config.feeds import FeedConfig, load_feeds
@@ -62,18 +62,24 @@ def make_client() -> httpx.Client:
     )
 
 
-def sync_sources(session: Session, feeds: Sequence[FeedConfig]) -> dict[str, int]:
-    """Make media_sources match the config (by feed_url); returns {feed_url: source id}.
-    Sources removed from the config are kept, so their articles stay attached."""
+def sync_sources(session: Session, feeds: Sequence[FeedConfig]) -> int:
+    """Seed media_sources from the config. The DATABASE is the reference: feeds.yaml only adds the feeds
+    that are missing (by feed_url). It never renames a source, never re-activates a deactivated one and
+    never re-creates one an admin deleted for good (deleted_sources). Returns the number of sources added."""
+    deleted = set(session.scalars(select(DeletedSource.feed_url)))
+    added = 0
     for feed in feeds:
-        session.execute(
+        if feed.feed_url in deleted:
+            continue
+        result = session.execute(
             insert(MediaSource)
             .values(name=feed.name, feed_url=feed.feed_url)
-            .on_conflict_do_update(index_elements=["feed_url"], set_={"name": feed.name})
+            .on_conflict_do_nothing(index_elements=["feed_url"])
+            .returning(MediaSource.id)
         )
+        added += result.first() is not None
     session.flush()
-    rows = session.execute(select(MediaSource.feed_url, MediaSource.id)).all()
-    return {url: id_ for url, id_ in rows}
+    return added
 
 
 def parse_feed(content: bytes, now: datetime | None = None) -> list[ParsedArticle]:
@@ -144,26 +150,30 @@ def ingest(
     feeds: Sequence[FeedConfig] | None = None,
     client: httpx.Client | None = None,
 ) -> IngestReport:
-    """Fetch every configured feed. A failing feed is reported and never stops the others."""
+    """Seed missing sources from feeds.yaml, then fetch every ACTIVE source of the database (deactivated
+    sources are not fetched; their articles stay). A failing feed is reported and never stops the others."""
     feeds = load_feeds() if feeds is None else feeds
-    source_ids = sync_sources(session, feeds)
+    sync_sources(session, feeds)
+    sources = session.execute(
+        select(MediaSource.id, MediaSource.name, MediaSource.feed_url).where(MediaSource.active).order_by(MediaSource.id)
+    ).all()
     session.commit()
     own_client = client is None
     client = client or make_client()
     report = IngestReport()
     try:
-        for feed in feeds:
-            result = FeedResult(feed.name, feed.feed_url)
+        for source_id, name, feed_url in sources:
+            result = FeedResult(name, feed_url)
             report.feeds.append(result)
             try:
-                articles = parse_feed(fetch_feed(client, feed.feed_url))
-                report.new_articles += upsert_articles(session, source_ids[feed.feed_url], articles)
+                articles = parse_feed(fetch_feed(client, feed_url))
+                report.new_articles += upsert_articles(session, source_id, articles)
                 session.commit()
                 result.fetched = len(articles)
             except Exception as exc:  # one broken feed must not stop the others
                 session.rollback()
                 result.error = f"{type(exc).__name__}: {exc}"[:300]
-                log.warning("feed %s failed: %s", feed.name, result.error)
+                log.warning("feed %s failed: %s", name, result.error)
     finally:
         if own_client:
             client.close()

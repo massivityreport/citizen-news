@@ -45,7 +45,7 @@ def session(database_url):
         yield s
         s.rollback()
         # Clean tables between tests (CASCADE handles FKs).
-        s.execute(text("TRUNCATE votes, articles, topics, accounts, login_tokens, sessions, admin_sessions, media_sources RESTART IDENTITY CASCADE"))
+        s.execute(text("TRUNCATE votes, articles, topics, accounts, login_tokens, sessions, admin_sessions, media_sources, deleted_sources RESTART IDENTITY CASCADE"))
         s.commit()
 
 

@@ -75,10 +75,11 @@ def test_ingest_is_idempotent(session):
     assert session.scalar(select(func.count()).select_from(MediaSource)) == 2
 
 
-def test_renamed_source_is_updated_not_duplicated(session):
+def test_renamed_in_yaml_does_not_rename_the_source(session):
+    # the database is the reference: feeds.yaml never overwrites a name an admin may have chosen
     ingest(session, [ALPHA], client=make_client())
     ingest(session, [FeedConfig(name="Alpha Info", feed_url=ALPHA.feed_url)], client=make_client())
-    assert [s.name for s in session.scalars(select(MediaSource))] == ["Alpha Info"]
+    assert [s.name for s in session.scalars(select(MediaSource))] == ["Alpha"]
 
 
 def test_failing_feeds_do_not_stop_the_others(session):
@@ -278,3 +279,66 @@ def test_ingest_backfill_leaves_topic_assignment_untouched(session):
     assert article.image_url == "https://cdn.example/new.jpg"
     assert article.topic_id == topic_id and article.published_at == published
     assert session.get(Topic, topic_id).updated_at == updated_at
+
+
+# --- the database is the reference (feeds.yaml only seeds it) ---
+
+def _fetched_urls(client_log: list[str]):
+    def handler(request: httpx.Request) -> httpx.Response:
+        client_log.append(str(request.url))
+        return httpx.Response(200, content=(FIXTURES / "feed_alpha.xml").read_bytes())
+
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+def test_sync_sources_only_adds_missing_sources(session):
+    from app.services.ingest import sync_sources
+
+    assert sync_sources(session, [ALPHA, BETA]) == 2
+    assert sync_sources(session, [ALPHA, BETA]) == 0
+    assert sync_sources(session, [ALPHA, BETA, BROKEN]) == 1
+    assert session.scalar(select(func.count()).select_from(MediaSource)) == 3
+
+
+def test_sync_sources_never_reactivates(session):
+    from app.services.ingest import sync_sources
+
+    sync_sources(session, [ALPHA])
+    session.execute(MediaSource.__table__.update().values(active=False))
+    sync_sources(session, [ALPHA])
+    assert session.scalars(select(MediaSource.active)).all() == [False]
+
+
+def test_sync_sources_does_not_recreate_a_deleted_source(session):
+    from app.models.entities import DeletedSource
+    from app.services.ingest import sync_sources
+
+    session.add(DeletedSource(feed_url=ALPHA.feed_url))
+    session.flush()
+    assert sync_sources(session, [ALPHA, BETA]) == 1
+    assert session.scalars(select(MediaSource.feed_url)).all() == [BETA.feed_url]
+
+
+def test_new_sources_are_active_by_default(session):
+    ingest(session, [ALPHA], client=make_client())
+    assert session.scalars(select(MediaSource.active)).all() == [True]
+
+
+def test_ingest_skips_inactive_sources_but_keeps_their_articles(session):
+    ingest(session, [ALPHA, BETA], client=make_client())
+    beta = session.scalars(select(MediaSource).where(MediaSource.feed_url == BETA.feed_url)).one()
+    beta.active = False
+    session.commit()
+    fetched: list[str] = []
+    report = ingest(session, [ALPHA, BETA], client=_fetched_urls(fetched))
+    assert fetched == [ALPHA.feed_url]
+    assert [f.name for f in report.feeds] == ["Alpha"]
+    assert session.scalar(select(func.count()).select_from(Article).where(Article.source_id == beta.id)) == 2
+
+
+def test_ingest_fetches_sources_added_in_the_database(session):
+    session.add(MediaSource(name="Ajoutée", feed_url="https://added.example/rss"))
+    session.commit()
+    fetched: list[str] = []
+    ingest(session, [], client=_fetched_urls(fetched))
+    assert fetched == ["https://added.example/rss"]
