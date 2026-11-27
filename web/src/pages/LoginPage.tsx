@@ -4,7 +4,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../api/client";
 import { meKey, useLogout, useMe } from "../api/hooks";
 import { usePageTitle } from "../components/usePageTitle";
-import { claimLocalVotes, type ClaimResult } from "../votes";
 import styles from "./LoginPage.module.css";
 
 const TITLE = "Se connecter";
@@ -18,18 +17,10 @@ function internalPath(value: unknown): string | null {
 
 const plural = (n: number, one: string, many: string) => (n > 1 ? many : one);
 
-function claimMessage(r: ClaimResult): string {
-  switch (r.status) {
-    case "ok":
-      if (r.claimed === 0) return "Vous êtes connecté·e. Vos choix étaient déjà enregistrés.";
-      return r.claimed === 1
-        ? "Vous êtes connecté·e. Votre choix a été enregistré."
-        : `Vous êtes connecté·e. Vos ${r.claimed} choix ont été enregistrés.`;
-    case "none":
-      return "Vous êtes connecté·e.";
-    default:
-      return "Vous êtes connecté·e. Vos choix faits dans ce navigateur n’ont pas pu être enregistrés pour l’instant ; nous réessaierons à votre prochaine visite.";
-  }
+/** Le brouillon de une attaché au lien (contrat V2) est fusionné par le serveur : on le dit simplement. */
+function doneMessage(draft: { added: number; ignored: number } | null | undefined): string {
+  if (!draft || draft.added === 0) return "Vous êtes connecté·e.";
+  return `Vous êtes connecté·e. ${draft.added} ${plural(draft.added, "sujet a été ajouté", "sujets ont été ajoutés")} à votre une.`;
 }
 
 type Phase =
@@ -49,7 +40,7 @@ export default function LoginPage() {
   const [phase, setPhase] = useState<Phase | null>(() =>
     token === null ? null : token === "" ? { kind: "invalid" } : { kind: "verifying" },
   );
-  const [from] = useState(() => internalPath((location.state as { from?: unknown } | null)?.from) ?? "/jouer");
+  const [from] = useState(() => internalPath((location.state as { from?: unknown } | null)?.from) ?? "/composer");
   const started = useRef(false);
   const msgRef = useRef<HTMLParagraphElement>(null);
   const me = useMe();
@@ -73,10 +64,8 @@ export default function LoginPage() {
         return;
       }
       await qc.cancelQueries({ queryKey: meKey });
-      qc.setQueryData(meKey, user);
-      const result = await claimLocalVotes();
-      if (result.status === "unauthorized") await qc.invalidateQueries({ queryKey: meKey });
-      setPhase({ kind: "done", message: claimMessage(result) });
+      qc.setQueryData(meKey, { email: user.email });
+      setPhase({ kind: "done", message: doneMessage(user.draft) });
     })();
   }, [token, qc]);
 
@@ -162,7 +151,7 @@ function Account({ email }: { email: string }) {
         Se déconnecter
       </button>
       <p>
-        <Link to="/jouer">Continuer à voter</Link>
+        <Link to="/composer">Composer ma une</Link>
       </p>
     </div>
   );

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ApiError } from "../../api/client";
 import { useAdminTopic, useAdminTopicVotes } from "../../api/hooks";
-import type { SupportLevel, VoteChoice } from "../../api/types";
+import type { AdminSupportLevel as SupportLevel, AdminVoteChoice as VoteChoice } from "../../api/types";
 import { LineChart } from "../../components/admin/LineChart";
 import { Pager } from "../../components/admin/TableParts";
 import { usePageTitle } from "../../components/usePageTitle";

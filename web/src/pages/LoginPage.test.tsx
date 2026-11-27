@@ -7,7 +7,6 @@ import { MemoryRouter, useLocation } from "react-router-dom";
 import { AppRoutes } from "../App";
 import { bodiesOf, res, stubFetch, type Handler } from "../test/api-stub";
 import { makeQueryClient } from "../test/utils";
-import { readLocalVotes, STORAGE_KEY } from "../votes";
 
 const EMAIL = "marie@example.org";
 
@@ -41,13 +40,10 @@ function session(extra: Record<string, Handler> = {}, connected = false) {
       on = false;
       return res(204);
     },
-    "GET /api/vote/next": () => res(200, { items: [] }),
     ...extra,
   });
 }
 
-const seed = (n: number) =>
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from({ length: n }, (_, i) => ({ topic_id: i + 1, choice: "more" }))));
 const main = () => within(screen.getByRole("main"));
 
 beforeEach(() => localStorage.clear());
@@ -98,38 +94,30 @@ describe("Formulaire de connexion", () => {
 });
 
 describe("Vérification du lien", () => {
-  it("succès : verify, token retiré de l'URL, claim, liste locale vidée, e-mail dans l'en-tête", async () => {
-    seed(2);
-    const fn = session({ "POST /api/votes/claim": () => res(200, { claimed: 2 }) });
+  it("succès : verify, token retiré de l'URL, e-mail dans l'en-tête, retour vers /composer", async () => {
+    const fn = session();
     renderLogin("/connexion?token=secret123");
-    expect(await screen.findByText("Vous êtes connecté·e. Vos 2 choix ont été enregistrés.")).toBeInTheDocument();
-    expect(screen.getByTestId("loc")).toHaveTextContent(/^\/connexion$/);
+    expect(await screen.findByText("Vous êtes connecté·e.")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId("loc")).toHaveTextContent(/^\/connexion$/));
     expect(bodiesOf(fn, "POST /api/auth/verify")).toEqual([{ token: "secret123" }]);
-    expect(bodiesOf(fn, "POST /api/votes/claim")).toEqual([
-      { votes: [{ topic_id: 1, choice: "more" }, { topic_id: 2, choice: "more" }] },
-    ]);
-    expect(readLocalVotes()).toEqual([]);
     expect(within(screen.getByRole("banner")).getByText(EMAIL)).toBeInTheDocument();
     expect(JSON.stringify({ ...localStorage })).not.toContain("secret123");
     await userEvent.click(screen.getByRole("link", { name: "Continuer" }));
-    expect(await screen.findByTestId("loc")).toHaveTextContent("/jouer");
+    expect(await screen.findByTestId("loc")).toHaveTextContent("/composer");
   });
 
-  it("sans vote local : pas de claim", async () => {
-    const fn = session();
+  it("brouillon fusionné par le serveur : le message l'indique", async () => {
+    session({ "POST /api/auth/verify": () => res(200, { email: EMAIL, draft: { added: 2, ignored: 1 } }) });
     renderLogin("/connexion?token=t");
-    expect(await screen.findByText("Vous êtes connecté·e.")).toBeInTheDocument();
-    expect(bodiesOf(fn, "POST /api/votes/claim")).toEqual([]);
+    expect(await screen.findByText("Vous êtes connecté·e. 2 sujets ont été ajoutés à votre une.")).toBeInTheDocument();
   });
 
   it("400 : message « lien plus valable » et formulaire", async () => {
-    seed(1);
     session({ "POST /api/auth/verify": () => res(400, { detail: "x" }) });
     renderLogin("/connexion?token=vieux");
     expect(await screen.findByRole("alert")).toHaveTextContent("Ce lien n’est plus valable : demandez-en un nouveau.");
     expect(screen.getByLabelText("Adresse e-mail")).toBeInTheDocument();
     expect(screen.getByTestId("loc")).toHaveTextContent(/^\/connexion$/);
-    expect(readLocalVotes()).toHaveLength(1);
   });
 
   it("déjà connecté avec un lien invalide : message affiché dans la vue connectée", async () => {
@@ -148,29 +136,11 @@ describe("Vérification du lien", () => {
     expect(bodiesOf(fn, "POST /api/auth/verify")).toHaveLength(1);
   });
 
-  it("claim en 5xx : les votes locaux sont conservés", async () => {
-    seed(3);
-    session({ "POST /api/votes/claim": () => res(503, {}) });
-    renderLogin("/connexion?token=t");
-    expect(await screen.findByText(/n’ont pas pu être enregistrés/)).toBeInTheDocument();
-    expect(readLocalVotes()).toHaveLength(3);
-  });
-
-  it("plus de 200 votes : lots de 200", async () => {
-    seed(450);
-    const fn = session({
-      "POST /api/votes/claim": (init) => res(200, { claimed: JSON.parse(init!.body as string).votes.length }),
-    });
-    renderLogin("/connexion?token=t");
-    expect(await screen.findByText("Vous êtes connecté·e. Vos 450 choix ont été enregistrés.")).toBeInTheDocument();
-    expect(bodiesOf(fn, "POST /api/votes/claim").map((b) => b.votes.length)).toEqual([200, 200, 50]);
-  });
-
-  it("redirige vers /jouer après le message", async () => {
+  it("redirige vers /composer après le message", async () => {
     session();
     renderLogin("/connexion?token=t");
     await screen.findByText("Vous êtes connecté·e.");
-    await waitFor(() => expect(screen.getByTestId("loc")).toHaveTextContent("/jouer"), { timeout: 4000 });
+    await waitFor(() => expect(screen.getByTestId("loc")).toHaveTextContent("/composer"), { timeout: 4000 });
   });
 });
 
@@ -183,21 +153,5 @@ describe("Session", () => {
     expect(await main().findByLabelText("Adresse e-mail")).toBeInTheDocument();
     expect(bodiesOf(fn, "POST /api/auth/logout")).toHaveLength(1);
     expect(within(screen.getByRole("banner")).getByRole("link", { name: "Se connecter" })).toBeInTheDocument();
-  });
-
-  it("retente le claim en silence au chargement si une session et des votes locaux subsistent", async () => {
-    seed(2);
-    const fn = session({ "POST /api/votes/claim": () => res(200, { claimed: 2 }) }, true);
-    renderLogin("/comment-ca-marche");
-    await waitFor(() => expect(readLocalVotes()).toEqual([]));
-    expect(bodiesOf(fn, "POST /api/votes/claim")).toHaveLength(1);
-  });
-
-  it("la bannière de /jouer disparaît une fois connecté", async () => {
-    seed(1);
-    session({ "GET /api/vote/next": () => res(200, { items: [] }), "POST /api/votes/claim": () => res(200, { claimed: 1 }) }, true);
-    renderLogin("/jouer");
-    await screen.findByText(/Vous avez tout évalué|Chargement/);
-    expect(screen.queryByText(/gardés dans ce navigateur/)).toBeNull();
   });
 });
