@@ -1,5 +1,10 @@
 import type {
+  AdminArticle,
   AdminSource,
+  AdminTopicDetail,
+  AdminTopicRow,
+  AdminVote,
+  Page,
   FrontTopic,
   HalvingConfig,
   Me,
@@ -82,6 +87,13 @@ export async function request<T>(path: string, init: { method?: string; body?: u
   return data as T;
 }
 
+function query(params: Record<string, string>): string {
+  const q = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) if (v !== "") q.set(k, v);
+  const s = q.toString();
+  return s ? `?${s}` : "";
+}
+
 export const api = {
   topicsFront: (limit = 10) =>
     request<{ items: FrontTopic[]; has_more: boolean }>(`/topics/front?limit=${limit}`),
@@ -144,6 +156,16 @@ export const api = {
   /** `confirm` : nombre d’articles qui seront supprimés (le serveur refuse s’il a changé). */
   adminDeleteSource: (id: number, confirm: number) =>
     request<{ id: number; deleted_articles: number }>(`/admin/sources/${id}?confirm=${confirm}`, { method: "DELETE" }),
+
+  /** Les paramètres vides sont omis. */
+  adminArticles: (params: Record<string, string>) => request<Page<AdminArticle>>(`/admin/articles${query(params)}`),
+
+  adminTopics: (params: Record<string, string>) => request<Page<AdminTopicRow>>(`/admin/topics${query(params)}`),
+
+  adminTopic: (id: number) => request<AdminTopicDetail>(`/admin/topics/${id}`),
+
+  adminTopicVotes: (id: number, params: Record<string, string>) =>
+    request<Page<AdminVote>>(`/admin/topics/${id}/votes${query(params)}`),
 
   halvingConfig: () => request<HalvingConfig>("/halving/config"),
 };
