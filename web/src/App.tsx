@@ -1,10 +1,12 @@
 import { lazy, Suspense } from "react";
-import { Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes } from "react-router-dom";
 import { Layout } from "./components/Layout";
 import HomePage from "./pages/HomePage";
 
 // La home est dans le bundle principal ; les autres routes sont chargées à la demande.
-const PlayPage = lazy(() => import("./pages/PlayPage"));
+const ComposerPage = lazy(() => import("./pages/ComposerPage"));
+const EditionPage = lazy(() => import("./pages/EditionPage"));
+const ArchivesPage = lazy(() => import("./pages/ArchivesPage"));
 const HowItWorksPage = lazy(() => import("./pages/HowItWorksPage"));
 const LoginPage = lazy(() => import("./pages/LoginPage"));
 // Backoffice : hors de la mise en page publique, aucun lien depuis le site.
@@ -30,7 +32,10 @@ export function AppRoutes() {
         </Route>
         <Route element={<Layout />}>
           <Route index element={<HomePage />} />
-          <Route path="jouer" element={<PlayPage />} />
+          <Route path="composer" element={<ComposerPage />} />
+          <Route path="jouer" element={<Navigate to="/composer" replace />} />
+          <Route path="une/:date" element={<EditionPage />} />
+          <Route path="archives" element={<ArchivesPage />} />
           <Route path="comment-ca-marche" element={<HowItWorksPage />} />
           <Route path="connexion" element={<LoginPage />} />
           <Route path="*" element={<NotFoundPage />} />

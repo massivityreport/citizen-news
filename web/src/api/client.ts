@@ -5,13 +5,12 @@ import type {
   AdminTopicDetail,
   AdminTopicRow,
   AdminVote,
-  Page,
-  FrontTopic,
-  HalvingConfig,
+  CurrentEdition,
+  Edition,
+  EditionSummary,
   Me,
-  TopicCard,
-  Vote,
-  VoteChoice,
+  Page,
+  VerifyResult,
 } from "./types";
 
 const BASE = "/api";
@@ -96,27 +95,16 @@ function query(params: Record<string, string>): string {
 }
 
 export const api = {
-  topicsFront: (limit = 10) =>
-    request<{ items: FrontTopic[]; has_more: boolean }>(`/topics/front?limit=${limit}`),
+  currentEdition: () => request<CurrentEdition>("/edition/current"),
 
-  voteNext: (count = 10, seen: number[] = []) => {
-    const q = new URLSearchParams({ count: String(count) });
-    if (seen.length) q.set("seen", seen.join(","));
-    return request<{ items: TopicCard[] }>(`/vote/next?${q}`);
-  },
+  edition: (date: string) => request<Edition>(`/editions/${encodeURIComponent(date)}`),
 
-  vote: (vote: { topic_id: number; choice: VoteChoice }) =>
-    request<Vote>("/votes", { method: "POST", body: vote }),
+  editions: (limit = 30) => request<{ items: EditionSummary[] }>(`/editions?limit=${limit}`),
 
-  claimVotes: (votes: Vote[]) =>
-    request<{ claimed: number }>("/votes/claim", { method: "POST", body: { votes } }),
+  magicLink: (email: string, draft?: { topic_ids: number[] }) =>
+    request<void>("/auth/magic-link", { method: "POST", body: draft ? { email, draft } : { email } }),
 
-  myVotes: () => request<{ votes: Vote[] }>("/votes/mine"),
-
-  magicLink: (email: string) =>
-    request<void>("/auth/magic-link", { method: "POST", body: { email } }),
-
-  verify: (token: string) => request<Me>("/auth/verify", { method: "POST", body: { token } }),
+  verify: (token: string) => request<VerifyResult>("/auth/verify", { method: "POST", body: { token } }),
 
   logout: () => request<void>("/auth/logout", { method: "POST" }),
 
@@ -169,6 +157,4 @@ export const api = {
 
   adminTopicVotes: (id: number, params: Record<string, string>) =>
     request<Page<AdminVote>>(`/admin/topics/${id}/votes${query(params)}`),
-
-  halvingConfig: () => request<HalvingConfig>("/halving/config"),
 };

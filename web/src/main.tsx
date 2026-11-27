@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter } from "react-router-dom";
 import { AppRoutes } from "./App";
 import { ApiError } from "./api/client";
+import { purgeLegacyVotes } from "./lib/legacy";
 import "./styles/global.css";
 
 const queryClient = new QueryClient({
@@ -18,6 +19,7 @@ const queryClient = new QueryClient({
 });
 
 async function start() {
+  purgeLegacyVotes();
   if (import.meta.env.VITE_USE_MOCKS === "true") {
     const { installMocks } = await import("../mocks");
     installMocks();

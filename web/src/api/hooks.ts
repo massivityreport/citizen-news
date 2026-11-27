@@ -15,6 +15,39 @@ export function useLogout() {
   });
 }
 
+export const currentEditionKey = ["edition", "current"] as const;
+export const editionKey = (date: string) => ["edition", date] as const;
+export const editionsKey = (limit: number) => ["editions", limit] as const;
+
+const RETRY_PUBLICATION_MS = 15_000;
+
+/**
+ * Une publiée. Une fois l'heure de clôture passée (horloge du lecteur corrigée du décalage avec le serveur),
+ * on réinterroge toutes les 15 s jusqu'à ce que la nouvelle édition (et un nouveau next_close_at) arrive.
+ */
+export function useCurrentEdition() {
+  return useQuery({
+    queryKey: currentEditionKey,
+    queryFn: api.currentEdition,
+    staleTime: 60_000,
+    refetchInterval: (query) => {
+      const { data, dataUpdatedAt } = query.state;
+      if (!data) return false;
+      const offset = Date.parse(data.server_time) - dataUpdatedAt;
+      return Date.parse(data.next_close_at) <= Date.now() + offset ? RETRY_PUBLICATION_MS : false;
+    },
+  });
+}
+
+/** Une édition publiée est figée : jamais rafraîchie. */
+export function useEdition(date: string, enabled = true) {
+  return useQuery({ queryKey: editionKey(date), queryFn: () => api.edition(date), staleTime: Infinity, enabled });
+}
+
+export function useEditions(limit = 30) {
+  return useQuery({ queryKey: editionsKey(limit), queryFn: () => api.editions(limit), staleTime: 5 * 60_000 });
+}
+
 export const adminSessionKey = ["admin", "session"] as const;
 
 /** true : session admin valide ; false : à connecter. Les futures requêtes admin utiliseront la clé ["admin", …]. */

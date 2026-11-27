@@ -10,7 +10,8 @@ import topic from "./Topic.module.css";
  */
 export function TopicImage({ url, title }: { url: string | null; title: string }) {
   const [failed, setFailed] = useState<string | null>(null);
-  if (!url || failed === url) return null;
+  // Défense en profondeur : le serveur valide déjà https, on ne charge jamais autre chose.
+  if (!url || !url.startsWith("https://") || failed === url) return null;
   return (
     <div className={topic.image}>
       <img
