@@ -10,7 +10,7 @@ Contrat des routes de Citizen News V2 : chaque citoyen compose sa une de 10 suje
 - **Compteurs d'approbation** : jamais dans une réponse destinée à un citoyen avant la publication (ni bassin, ni `/me/une`, ni erreur). Ils apparaissent dans l'édition publiée et dans le backoffice.
 - **Remplacement net de V1** (décision de l'humain) : plus de vote, de halving, de `support`/`reason`, de `/api/topics/front`, `/api/vote/next`, `/api/votes*`, `/api/halving/config`. La migration 0009 a supprimé ces données.
 
-**État d'implémentation** — implémenté : `GET /api/health`, l'authentification avec brouillon, le bassin (`GET /api/topics/pool`), la une personnelle (`/api/me/une*`), le calendrier d'édition, le backoffice sources et articles, `GET /api/admin/topics` (+ détail) et `GET /api/admin/stats` dans leur forme réduite décrite plus bas, la `TopicCard` V2. **Cible, à venir** (tâches suivantes) : éditions publiées, agrégation et clôture, aperçu et listes d'éditions admin, `approvals`/participants admin. Les sections ci-dessous marquées « (implémenté) » le sont ; les autres décrivent la cible.
+**État d'implémentation** — implémenté : `GET /api/health`, les éditions publiées (`GET /api/edition/current`, `/api/editions*`), l'agrégation et la clôture (worker), l'authentification avec brouillon, le bassin (`GET /api/topics/pool`), la une personnelle (`/api/me/une*`), le calendrier d'édition, le backoffice sources et articles, `GET /api/admin/topics` (+ détail) et `GET /api/admin/stats` dans leur forme réduite décrite plus bas, la `TopicCard` V2. **Cible, à venir** (tâche suivante) : aperçu et listes d'éditions admin, `approvals`/participants admin. Les sections ci-dessous marquées « (implémenté) » le sont ; les autres décrivent la cible.
 
 ## Types communs
 
@@ -86,7 +86,7 @@ Toute écriture : `409 {"detail": "La clôture est passée, la une du jour n'est
 
 **Clôture et sujets hors bassin.** `PUT /api/me/une` accepte des sujets existants hors bassin, mais la clôture ne compte que les sujets qui passent `eligible_pool` **au moment de la clôture** : les autres restent dans la une du citoyen sans rien totaliser. Les articles datés de plus d'1 h dans le futur sont ignorés pour la fenêtre du bassin. Limitation de débit sur les écritures (par compte, `429` avec `Retry-After` ; `RATE_LIMIT_UNE_WRITES_PER_ACCOUNT` par `RATE_LIMIT_UNE_WINDOW_SECONDS`, 60 par minute par défaut ; la lecture n'est pas limitée). Les écritures d'un même compte sont sérialisées (verrou sur le compte) : la limite de 10 ne peut pas être dépassée par des requêtes simultanées. Réponses `Cache-Control: no-store`. Les identifiants de `topic_ids` sont des entiers positifs (`422` sinon).
 
-## Éditions publiées
+## Éditions publiées (implémenté)
 
 Édition :
 
@@ -97,19 +97,23 @@ Toute écriture : `409 {"detail": "La clôture est passée, la une du jour n'est
                 "source_count": 5, "article_count": 9, "approvals": 80, "proportion": 0.667, "image_url": "https://…" } ] }
 ```
 
-Capture **figée** (titre, résumé, sources, nombre de médias… copiés à la clôture, ne changent plus ; `topic_id` vaut `null` si le sujet a été supprimé depuis). 0 à 10 `topics` : seuls les sujets avec ≥ 1 approbation. `proportion = approbations / participants` ; `participants` = nombre de comptes ayant enregistré une une **non vide**. Sans participants, l'édition est publiée quand même (`topics: []`, `participants: 0`).
+Capture **figée** (titre, résumé, sources, nombre de médias… copiés à la clôture, ne changent plus ; `topic_id` vaut `null` si le sujet a été supprimé depuis). 0 à 10 `topics` : seuls les sujets avec ≥ 1 approbation. `proportion = approbations / participants` ; arrondie à 3 décimales dans les réponses (valeur exacte conservée en base ;) `participants` = nombre de comptes ayant enregistré une une **non vide**. Sans participants, l'édition est publiée quand même (`topics: []`, `participants: 0`).
 
 | Route | Réponse |
 |---|---|
-| `GET /api/edition/current` — public | `{ "edition": Édition \| null, "next_close_at": "…Z", "server_time": "…Z" }` (`null` avant la première édition) |
-| `GET /api/editions/{date}` — public | Édition · `404 {"detail": "Édition introuvable."}` (permalien stable) |
-| `GET /api/editions?limit=30` — public | `limit` 1–100 · `{ "items": [ {"date", "published_at", "participants", "topic_count"} ] }`, plus récentes d'abord |
+| `GET /api/edition/current` — public | `{ "edition": Édition \| null, "next_close_at": "…Z", "server_time": "…Z" }` (`null` avant la première édition ; `next_close_at` = prochaine heure de clôture strictement après `server_time`, même si le worker est en retard ; `Cache-Control: no-store`) |
+| `GET /api/editions/{date}` — public | Édition · `404 {"detail": "Édition introuvable."}` (permalien stable) · date mal formée `422` · `Cache-Control: public, max-age=30` |
+| `GET /api/editions?limit=30` — public | `limit` 1–100 · `{ "items": [ {"date", "published_at", "participants", "topic_count"} ] }`, plus récentes d'abord · `Cache-Control: public, max-age=30` |
 
-## Agrégation et clôture (règles)
+## Agrégation et clôture (implémenté)
 
 **Agrégation** — une seule fonction, `aggregate(session, edition_date, now)` : score d'un sujet = nombre de comptes l'ayant dans leur une ; seuls les sujets éligibles à la clôture comptent (bassin) ; égalités départagées par `source_count` décroissant, puis `updated_at` le plus récent, puis `id` croissant (déterministe) ; les 10 premiers (score ≥ 1) forment la une ; rangs 11–20 pour l'aperçu admin. Elle rend le classement complet, les participants, les groupes d'égalité et le critère qui a départagé. La clôture **et** l'aperçu admin appellent exactement cette fonction.
 
+`aggregate(session, edition_date, now, *, top=10, extra=10)` (`app/services/aggregation.py`) n'écrit rien et rend un `Aggregation` (dataclasses) : `participants`, `ranking` (tous les sujets de score ≥ 1, `RankedTopic` : `rank`, `topic_id`, `score`, `proportion` = score / participants, données de publication captées — titre, résumé, sources, `source_count`, `article_count`, `image_url`, `updated_at` —, `tied_with`, `broken_by`), `topics` (rangs 1–`top`), `next` (rangs suivants, `extra`) et `ties` (`TieGroup` : `approvals`, `topic_ids`, `broken_by`, `crosses_cut`). `broken_by` d'un groupe d'égalité = le critère le plus profond nécessaire pour ordonner tout le groupe (`source_count` < `updated_at` < `id`) ; `crosses_cut` = le groupe a des sujets dans la une et hors de la une (coupure 10/11). Nombre de requêtes constant (participants, bassin, scores, sujets, cartes). Les participants sont les comptes ayant au moins un sujet dans leur une du jour, sujets hors bassin compris.
+
 **Clôture** — `close_due_edition(session, now)`, appelée par le worker (`python -m app.cli run`, vérification **chaque minute**, tick séparé de l'ingestion de 15 min) : au premier passage après l'heure locale de clôture, s'il n'existe pas d'édition pour `edition_date`, agrège et publie. Idempotente et atomique (une transaction ; verrou advisory ou contrainte unique sur `editions.edition_date` : deux workers simultanés → une seule édition). Rattrape un retard (worker arrêté des heures ou des jours : publie l'édition du jour dû, une seule, la plus récente due, pas d'éditions fantômes). Horloge injectable (`now`) ; tests à l'heure d'été (17:00 locale = 15:00 UTC l'été, 16:00 UTC l'hiver).
+
+Détails d'implémentation (`app/services/edition_close.py`) : `pending_editions` donne les dates dues ; seule la plus récente est publiée (les jours manqués avant elle ne produisent rien, et le calendrier passe à la suite car il s'appuie sur la dernière édition publiée). Verrou `pg_advisory_xact_lock` puis nouvelle vérification sous verrou ; la contrainte unique `editions.edition_date` est le filet (conflit = pas de seconde édition). L'édition et ses `edition_topics` s'insèrent dans une seule transaction (échec = rien de publié, le tick suivant réessaie). `published_at` = l'horloge `now` du tick. Après publication, l'ingestion peut modifier les sujets : l'édition ne change plus. Limite connue : une écriture de une démarrée juste avant l'heure de clôture et validée juste après peut manquer au décompte (le verrou est sur le compte, pas sur la clôture).
 
 ## Authentification (lien magique) (implémenté, brouillon compris)
 

@@ -8,7 +8,7 @@ Backend FastAPI + PostgreSQL. Contrat HTTP : [`docs/api-contract.md`](../docs/ap
 flux RSS ──ingest──▶ articles ──cluster──▶ topics
 ```
 
-V2 : chaque citoyen compose sa une de 10 sujets (table `selections`), figée en une une collective à 17 h (`editions`, `edition_topics`). Le schéma est posé (migration 0009, **irréversible côté données** : les votes et le halving V1 ont été supprimés) ; le bassin, la une personnelle et le brouillon du lien magique sont en place ; la clôture et les éditions publiées arrivent avec la tâche suivante (contrat : [`docs/api-contract.md`](../docs/api-contract.md)).
+V2 : chaque citoyen compose sa une de 10 sujets (table `selections`), figée en une une collective à 17 h (`editions`, `edition_topics`). Le schéma est posé (migration 0009, **irréversible côté données** : les votes et le halving V1 ont été supprimés) ; le bassin, la une personnelle et le brouillon du lien magique sont en place ; la clôture à 17 h (worker), l'agrégation et les éditions publiées sont en place ; l'aperçu et les listes admin arrivent avec la tâche suivante (contrat : [`docs/api-contract.md`](../docs/api-contract.md)).
 
 ```
 ```
@@ -21,10 +21,12 @@ Dans le conteneur (le service `worker` du compose les lance en boucle) :
 docker compose run --rm api python -m app.cli ingest    # récupère les flux de config/feeds.yaml
 docker compose run --rm api python -m app.cli cluster   # regroupe les articles en sujets
 docker compose run --rm api python -m app.cli refresh   # ingest puis cluster
-docker compose run --rm api python -m app.cli run --interval-minutes 15   # refresh en boucle
+docker compose run --rm api python -m app.cli close-edition            # publie l'édition due la plus récente (idempotent)
+docker compose run --rm api python -m app.cli close-edition --dry-run  # affiche le classement, ne publie rien
+docker compose run --rm api python -m app.cli run --interval-minutes 15   # refresh en boucle + clôture chaque minute
 ```
 
-Le service `worker` exécute `run`. Intervalle : variable `INGEST_INTERVAL_MINUTES` (défaut 15). Un flux en erreur (réseau, 404, XML invalide) est consigné dans les logs et n'arrête pas les autres ; `ingest` ne retourne un code d'erreur que si **aucun** flux n'a pu être lu. Toutes les commandes sont idempotentes : les relancer ne duplique rien.
+Le service `worker` exécute `run`. Deux boucles dans le même processus : l'ingestion toutes les `INGEST_INTERVAL_MINUTES` (15) et, dans un second thread, le tick de clôture toutes les 60 s (le premier tick est immédiat : un worker arrêté rattrape au démarrage). Chaque tick journalise ses exceptions sans s'arrêter ; SIGINT/SIGTERM arrêtent proprement les deux. Intervalle : variable `INGEST_INTERVAL_MINUTES` (défaut 15). Un flux en erreur (réseau, 404, XML invalide) est consigné dans les logs et n'arrête pas les autres ; `ingest` ne retourne un code d'erreur que si **aucun** flux n'a pu être lu. Toutes les commandes sont idempotentes : les relancer ne duplique rien.
 
 ### `config/feeds.yaml`
 
@@ -61,6 +63,8 @@ Le titre du sujet est celui de l'article le plus représentatif (le plus proche 
 - **Bassin** (`app/services/pool.py`) : `eligible_pool(session, now, topic_ids=None)` est LA règle d'éligibilité (un article daté — `published_at`, sinon `fetched_at` — dans les `POOL_WINDOW_HOURS` dernières heures, et au moins `min_sources_for_front` médias distincts sur l'ensemble des articles du sujet) : une requête SQL agrégée, réutilisée par les écritures de la une et, à la tâche suivante, par la clôture. La fenêtre de regroupement (`window_hours`, 48 h) n'est pas touchée. La route (`app/routers/topics.py`) fait un nombre constant de requêtes quel que soit le nombre de sujets. `total` = nombre de sujets de l'onglet, `items` plafonné à 300. Réponse `Cache-Control: no-store`.
 - **Calendrier** (`app/services/edition_calendar.py`) : `edition_state(session, now)` → `edition_date`, `closes_at` (UTC), `open`. Clôture à `EDITION_HOUR` h `EDITION_TIMEZONE` (zoneinfo, heure d'été gérée). Dès l'heure de clôture l'édition est fermée même sans publication ; elle rouvre pour le lendemain (une vide) quand une ligne `editions` existe pour le jour local. L'horloge est la dépendance `app.deps.clock` (surchargeable dans les tests avec `app.dependency_overrides`).
 - **Une personnelle** (`app/services/une.py`, routes `/api/me/une*`) : chaque écriture est une transaction qui verrouille d'abord la ligne du compte (`SELECT … FOR UPDATE`) : deux écritures du même compte sont sérialisées, la limite de 10 ne peut pas être dépassée par des requêtes simultanées. `PUT /api/me/une` (remplacement) exige des sujets existants, pas dans le bassin ; l'ajout unitaire exige le bassin (`422`), `merge` ignore les sujets inconnus ou hors bassin (compte dans `ignored`, tout comme ceux qui ne tiennent plus dans les 10 places ; un sujet déjà dans la une n'est ni ajouté ni ignoré).
+- **Agrégation et clôture** (`app/services/aggregation.py`, `edition_close.py`) : `aggregate` classe (score, `source_count`, `updated_at`, `id`), repère les égalités et capte les données de publication sans rien écrire ; `close_due_edition(session, now)` (worker, `close-edition`) publie la plus récente édition due : verrou advisory, une transaction, idempotente (voir le contrat). L'horloge est toujours injectée (`now`). `close-edition --dry-run` affiche le classement de l'édition due, ou de l'édition en cours si rien n'est dû.
+- **Éditions publiées** (`app/routers/editions.py`, `app/services/editions.py`) : lecture de la capture figée (jamais recalculée), `GET /api/edition/current` (`no-store`), `GET /api/editions/{date}` et `GET /api/editions` (`public, max-age=30`).
 - **Brouillon du lien magique** : `login_tokens.draft` (`{"topic_ids": [...]}`), jamais dans l'URL ni les logs. `POST /api/auth/verify` consomme le jeton (le brouillon est effacé avec lui ; un jeton expiré perd son brouillon à la purge suivante) puis fusionne comme `/me/une/merge` si l'édition est ouverte. Une panne de fusion ne bloque pas la connexion (`draft: null`).
 
 ### Données de démonstration
