@@ -189,6 +189,9 @@ export const api = {
   adminFeedbackSetRead: (id: number, read: boolean) =>
     request<AdminFeedbackDetail>(`/admin/feedback/${id}/${read ? "read" : "unread"}`, { method: "POST" }),
 
+  adminFeedbackReply: (id: number, message: string) =>
+    request<AdminFeedbackDetail>(`/admin/feedback/${id}/replies`, { method: "POST", body: { message } }),
+
   adminFeedbackDelete: (id: number) => request<void>(`/admin/feedback/${id}`, { method: "DELETE" }),
 
   adminPreview: () => request<AdminPreview>("/admin/edition/preview"),

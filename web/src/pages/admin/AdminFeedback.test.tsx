@@ -3,7 +3,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AppRoutes } from "../../App";
 import type { AdminFeedbackDetail, AdminFeedbackItem } from "../../api/types";
-import { formatClock } from "../../lib/format";
+import { formatClock, formatFull } from "../../lib/format";
 import { renderWithProviders } from "../../test/utils";
 import { bodiesOf, res, stubFetch, type Handler } from "../../test/api-stub";
 
@@ -42,6 +42,7 @@ const detail = (over: Partial<AdminFeedbackDetail> = {}): AdminFeedbackDetail =>
   ],
   is_read: false,
   answered: false,
+  replies: [],
   ...over,
 });
 
@@ -181,6 +182,80 @@ describe("détail d'un avis", () => {
     await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Supprimer définitivement" }));
     await waitFor(() => expect(bodiesOf(fn, "DELETE /api/admin/feedback/7")).toHaveLength(1));
     expect(await screen.findByRole("table", { name: /Avis/ })).toBeInTheDocument();
+  });
+
+  describe("réponses par e-mail", () => {
+    const reply = (id: number, message: string, created_at: string) => ({ id, message, created_at });
+
+    it("historique des réponses avec leur date, sous l'avis", async () => {
+      stubFetch(
+        routes({
+          "GET /api/admin/feedback/7": () =>
+            res(200, detail({ answered: true, replies: [reply(1, "Première réponse", "2026-11-26T11:00:00Z"), reply(2, "Seconde réponse", "2026-11-27T08:30:00Z")] })),
+        }),
+      );
+      open("/admin/avis/7");
+      const history = await screen.findByRole("list", { name: "Réponses envoyées" });
+      const items = within(history).getAllByRole("listitem");
+      expect(items).toHaveLength(2);
+      expect(items[0]).toHaveTextContent("Première réponse");
+      expect(items[0]).toHaveTextContent(formatFull("2026-11-26T11:00:00Z"));
+      expect(items[1]).toHaveTextContent("Seconde réponse");
+    });
+
+    it("sans réponse : le dit", async () => {
+      stubFetch(routes());
+      open("/admin/avis/7");
+      expect(await screen.findByText("Aucune réponse envoyée.")).toBeInTheDocument();
+    });
+
+    it("envoyer : le texte part à l'API, le champ se vide et la réponse apparaît", async () => {
+      let replies: ReturnType<typeof reply>[] = [];
+      const fn = stubFetch(
+        routes({
+          "GET /api/admin/feedback/7": () => res(200, detail({ replies, answered: replies.length > 0 })),
+          "POST /api/admin/feedback/7/replies": () => ((replies = [reply(1, "Merci !", "2026-11-27T09:00:00Z")]), res(201, detail({ replies, answered: true }))),
+        }),
+      );
+      open("/admin/avis/7");
+      const box = await screen.findByRole("textbox", { name: /Votre réponse/ });
+      await userEvent.type(box, "  Merci !  ");
+      await userEvent.click(screen.getByRole("button", { name: "Envoyer la réponse" }));
+      await waitFor(() => expect(bodiesOf(fn, "POST /api/admin/feedback/7/replies")).toEqual([{ message: "Merci !" }]));
+      expect(await screen.findByRole("list", { name: "Réponses envoyées" })).toHaveTextContent("Merci !");
+      expect(box).toHaveValue("");
+    });
+
+    it("réponse vide : bouton inactif, rien n'est envoyé", async () => {
+      const fn = stubFetch(routes());
+      open("/admin/avis/7");
+      const button = await screen.findByRole("button", { name: "Envoyer la réponse" });
+      expect(button).toBeDisabled();
+      await userEvent.type(screen.getByRole("textbox", { name: /Votre réponse/ }), "   ");
+      expect(button).toBeDisabled();
+      expect(bodiesOf(fn, "POST /api/admin/feedback/7/replies")).toHaveLength(0);
+    });
+
+    it("échec d'envoi : message d'erreur, texte conservé pour réessayer, rien dans l'historique", async () => {
+      let fail = true;
+      const fn = stubFetch(
+        routes({
+          "POST /api/admin/feedback/7/replies": () =>
+            fail ? res(502, { detail: "L'e-mail n'a pas pu être envoyé : la réponse n'est pas enregistrée, réessayez." }) : res(201, detail({ answered: true, replies: [reply(1, "Merci !", "2026-11-27T09:00:00Z")] })),
+        }),
+      );
+      open("/admin/avis/7");
+      const box = await screen.findByRole("textbox", { name: /Votre réponse/ });
+      await userEvent.type(box, "Merci !");
+      await userEvent.click(screen.getByRole("button", { name: "Envoyer la réponse" }));
+      expect(await screen.findByRole("alert")).toHaveTextContent("L'e-mail n'a pas pu être envoyé");
+      expect(box).toHaveValue("Merci !");
+      expect(screen.queryByRole("list", { name: "Réponses envoyées" })).toBeNull();
+      fail = false;
+      await userEvent.click(screen.getByRole("button", { name: "Envoyer la réponse" }));
+      await waitFor(() => expect(bodiesOf(fn, "POST /api/admin/feedback/7/replies")).toHaveLength(2));
+      await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    });
   });
 
   it("avis introuvable", async () => {

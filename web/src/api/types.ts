@@ -227,7 +227,7 @@ export interface RecentAction {
   topic_id?: number;
 }
 
-/** Une ligne de la liste des avis (backoffice). `answered` reste faux tant que les réponses n'existent pas. */
+/** Une ligne de la liste des avis (backoffice). `answered` : au moins une réponse a été envoyée par e-mail. */
 export interface AdminFeedbackItem {
   id: number;
   created_at: string;
@@ -244,6 +244,13 @@ export interface AdminFeedbackPage extends Page<AdminFeedbackItem> {
   unread_count: number;
 }
 
+/** Une réponse envoyée par e-mail à l'auteur d'un avis. */
+export interface AdminFeedbackReply {
+  id: number;
+  created_at: string;
+  message: string;
+}
+
 export interface AdminFeedbackDetail {
   id: number;
   created_at: string;
@@ -258,4 +265,6 @@ export interface AdminFeedbackDetail {
   recent_actions: RecentAction[] | null;
   is_read: boolean;
   answered: boolean;
+  /** Du plus ancien au plus récent. */
+  replies: AdminFeedbackReply[];
 }

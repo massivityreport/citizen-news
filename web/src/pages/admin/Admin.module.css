@@ -79,3 +79,9 @@
 .journey time { font-variant-numeric: tabular-nums; color: var(--c-muted); margin-right: .5rem; }
 .message { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--radius); padding: .8rem 1rem; margin: 0; }
 .filterRow { display: flex; align-items: center; gap: .5rem; }
+
+.replies { list-style: none; margin: 0; padding: 0; display: grid; gap: .6rem; }
+.replies li { display: grid; gap: .3rem; }
+.replyForm { display: grid; gap: .6rem; }
+.replyForm label { font-weight: 700; }
+.replyForm textarea { font: inherit; padding: .75rem; border: 2px solid var(--c-primary); border-radius: var(--radius); background: var(--c-surface); color: var(--c-text); width: 100%; resize: vertical; }

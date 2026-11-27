@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ApiError } from "../../api/client";
-import { useAdminFeedbackItem, useDeleteFeedback, useSetFeedbackRead } from "../../api/hooks";
+import { useAdminFeedbackItem, useDeleteFeedback, useReplyToFeedback, useSetFeedbackRead } from "../../api/hooks";
 import type { RecentAction } from "../../api/types";
 import { usePageTitle } from "../../components/usePageTitle";
 import { formatClock, formatFull } from "../../lib/format";
@@ -58,6 +58,35 @@ function DeleteDialog({ id, onClose }: { id: number; onClose: () => void }) {
         </div>
       </div>
     </div>
+  );
+}
+
+/** Champ de réponse : l’e-mail part d’abord ; en cas d’échec le texte reste là pour réessayer. */
+function ReplyForm({ id, email }: { id: number; email: string }) {
+  const reply = useReplyToFeedback();
+  const [text, setText] = useState("");
+  const message = text.trim();
+  return (
+    <form
+      className={styles.replyForm}
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (message) reply.mutate({ id, message }, { onSuccess: () => setText("") });
+      }}
+    >
+      <label htmlFor="feedback-reply">Votre réponse (envoyée par e-mail à {email})</label>
+      <textarea id="feedback-reply" rows={5} maxLength={5000} value={text} onChange={(e) => setText(e.target.value)} />
+      {reply.isError && (
+        <p role="alert" className={styles.error}>
+          {reply.error instanceof Error ? reply.error.message : "L’envoi a échoué."} Votre texte est conservé.
+        </p>
+      )}
+      <div>
+        <button type="submit" className={styles.btn} disabled={!message || reply.isPending}>
+          {reply.isPending ? "Envoi…" : "Envoyer la réponse"}
+        </button>
+      </div>
+    </form>
   );
 }
 
@@ -170,6 +199,20 @@ export default function AdminFeedbackDetailPage() {
           ))}
         </ul>
       )}
+      <h2>Réponses</h2>
+      {f.replies.length === 0 ? (
+        <p>Aucune réponse envoyée.</p>
+      ) : (
+        <ul className={styles.replies} aria-label="Réponses envoyées">
+          {f.replies.map((r) => (
+            <li key={r.id}>
+              <time dateTime={r.created_at}>{formatFull(r.created_at)}</time>
+              <span className={styles.message}>{r.message}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <ReplyForm id={f.id} email={f.email} />
       {setRead.isError && (
         <p role="alert" className={styles.error}>
           Le changement d’état a échoué. Réessayez dans un instant.

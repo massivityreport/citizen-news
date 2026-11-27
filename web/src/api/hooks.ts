@@ -220,6 +220,15 @@ export function useSetFeedbackRead() {
   });
 }
 
+/** Envoie la réponse par e-mail ; elle n'est enregistrée (et l'avis marqué répondu) que si l'envoi réussit. */
+export function useReplyToFeedback() {
+  const refresh = useRefreshFeedback();
+  return useMutation({
+    mutationFn: ({ id, message }: { id: number; message: string }) => api.adminFeedbackReply(id, message),
+    onSuccess: refresh,
+  });
+}
+
 export function useDeleteFeedback() {
   const qc = useQueryClient();
   return useMutation({
