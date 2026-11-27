@@ -50,6 +50,8 @@ describe("/admin", () => {
       "Sources",
       "Articles",
       "Sujets",
+      "Éditions",
+      "Aperçu de la une",
     ]);
 
     const user = userEvent.setup();

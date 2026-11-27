@@ -2,7 +2,8 @@ export interface Source {
   name: string;
   url: string;
   title: string;
-  published_at: string;
+  /** null : l'article du flux n'a pas de date. */
+  published_at: string | null;
 }
 
 /** Sujet du bassin (contrat V2) : aucun compteur d'approbation avant la publication. */
@@ -80,21 +81,13 @@ export interface EditionSummary {
   topic_count: number;
 }
 
-// Types propres au backoffice V1 : conservés tels quels jusqu'à la refonte de l'admin (tâches suivantes).
-export type AdminSupportLevel = "low" | "medium" | "high";
-export type AdminVoteChoice = "more" | "not_priority" | "unknown";
-export interface AdminReason {
-  code: string;
-  label: string;
-}
-
 export interface Me {
   email: string;
 }
 
 export interface VerifyResult extends Me {
   /** Brouillon de une fusionné à la vérification (null : aucun, ou édition fermée). */
-  draft?: { added: number; ignored: number } | null;
+  draft: { added: number; ignored: number } | null;
 }
 
 export interface AdminSource {
@@ -105,8 +98,6 @@ export interface AdminSource {
   article_count: number;
   last_article_at: string | null;
 }
-
-export type TopicState = "new" | "active" | "reserve" | "emerged";
 
 export interface Page<T> {
   items: T[];
@@ -132,68 +123,84 @@ export interface AdminArticle {
   grouped: boolean;
 }
 
+/** Ligne de GET /api/admin/topics (contrat V2) : approbations de l'édition en cours. */
 export interface AdminTopicRow {
   id: number;
   title: string;
-  state: TopicState;
-  wave: number;
-  state_changed_at: string | null;
   article_count: number;
   source_count: number;
-  vote_count: number;
+  updated_at: string;
+  approvals: number;
   image_url: string | null;
 }
 
 export interface AdminStatsCounts {
   articles: number;
-  votes: number;
-  voters: number;
+  /** Comptes ayant une une non vide. */
+  participants: number;
+  /** Unes enregistrées. */
+  selections: number;
 }
 
 export interface AdminStats {
   last_24h: AdminStatsCounts;
   total: AdminStatsCounts;
-  /** 30 jours UTC, aujourd’hui compris, un point par jour. `voters` : distincts par jour, non cumulables. */
-  series: { date: string; articles: number; votes: number; voters: number }[];
+  /** 30 jours UTC, un point par jour. */
+  series: { date: string; articles: number; participants: number; selections: number }[];
 }
 
-export interface AdminVoteDay {
-  date: string;
-  more: number;
-  not_priority: number;
-  unknown: number;
-  total: number;
+/** Approbations d'un sujet dans une édition publiée. */
+export interface AdminTopicHistory {
+  edition_date: string;
+  approvals: number;
+  proportion: number;
+  rank: number | null;
 }
 
 export interface AdminTopicDetail {
   id: number;
   title: string;
   summary: string;
-  state: TopicState;
-  wave: number;
   first_seen_at: string;
   updated_at: string;
-  state_changed_at: string | null;
-  evaluated_at: string | null;
   article_count: number;
   source_count: number;
-  support: { score: number; level: AdminSupportLevel; votes_count: number };
-  front: { on_front: boolean; reason: AdminReason | null };
-  votes: {
-    more: number;
-    not_priority: number;
-    unknown: number;
-    total: number;
-    voters: number;
-    first_vote_at: string | null;
-    daily: AdminVoteDay[];
-  };
+  /** Approbations de l'édition en cours. */
+  approvals: number;
+  /** 30 dernières éditions publiées, la plus récente d'abord. */
+  history: AdminTopicHistory[];
   articles: { id: number; title: string; url: string; source: AdminSourceRef; published_at: string | null }[];
   articles_truncated: boolean;
 }
 
-export interface AdminVote {
-  date: string;
-  choice: AdminVoteChoice;
-  account_id: number;
+export type TieCriterion = "source_count" | "updated_at" | "id";
+
+export interface AdminPreviewItem {
+  rank: number;
+  topic_id: number;
+  title: string;
+  approvals: number;
+  proportion: number;
+  source_count: number;
+  article_count: number;
+  updated_at: string;
+  tied_with: number[];
+  broken_by: TieCriterion | null;
+}
+
+export interface AdminPreviewTie {
+  approvals: number;
+  topic_ids: number[];
+  broken_by: TieCriterion;
+  /** L'égalité enjambe la coupure entre le 10e et le 11e rang. */
+  crosses_cut: boolean;
+}
+
+export interface AdminPreview {
+  computed_at: string;
+  edition_date: string;
+  participants: number;
+  topics: AdminPreviewItem[];
+  next: AdminPreviewItem[];
+  ties: AdminPreviewTie[];
 }

@@ -64,4 +64,12 @@ describe("TopicCardView", () => {
     const text = container.textContent ?? "";
     expect(text).not.toMatch(/approbation|populaire|popularité|soutien|vote|80|40 %/i);
   });
+
+  it("tolère une source sans date (published_at null)", () => {
+    const { container } = show(false, {
+      sources: [{ name: "Le Monde", url: "https://example.org/7", title: "Article 7", published_at: null }],
+    });
+    expect(screen.getByText("Le Monde", { exact: false })).toBeInTheDocument();
+    expect(container.textContent ?? "").not.toMatch(/Invalid Date|NaN|null/);
+  });
 });

@@ -1,10 +1,10 @@
 import type {
   AdminArticle,
   AdminSource,
+  AdminPreview,
   AdminStats,
   AdminTopicDetail,
   AdminTopicRow,
-  AdminVote,
   CurrentEdition,
   Edition,
   EditionSummary,
@@ -170,6 +170,10 @@ export const api = {
 
   adminTopic: (id: number) => request<AdminTopicDetail>(`/admin/topics/${id}`),
 
-  adminTopicVotes: (id: number, params: Record<string, string>) =>
-    request<Page<AdminVote>>(`/admin/topics/${id}/votes${query(params)}`),
+  /** Paginée comme les autres listes admin (page, page_size). */
+  adminEditions: (params: Record<string, string>) => request<Page<EditionSummary>>(`/admin/editions${query(params)}`),
+
+  adminEdition: (date: string) => request<Edition>(`/admin/editions/${encodeURIComponent(date)}`),
+
+  adminPreview: () => request<AdminPreview>("/admin/edition/preview"),
 };

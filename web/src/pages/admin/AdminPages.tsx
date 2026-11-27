@@ -9,25 +9,30 @@ const number = new Intl.NumberFormat("fr-FR");
 const TILES: { label: string; value: (s: AdminStats) => number }[] = [
   { label: "Articles (24 h)", value: (s) => s.last_24h.articles },
   { label: "Articles (total)", value: (s) => s.total.articles },
-  { label: "Votes (24 h)", value: (s) => s.last_24h.votes },
-  { label: "Votes (total)", value: (s) => s.total.votes },
-  { label: "Votants (24 h)", value: (s) => s.last_24h.voters },
-  { label: "Votants (total)", value: (s) => s.total.voters },
+  { label: "Participants (24 h)", value: (s) => s.last_24h.participants },
+  { label: "Participants (total)", value: (s) => s.total.participants },
+  { label: "Unes enregistrées (24 h)", value: (s) => s.last_24h.selections },
+  { label: "Unes enregistrées (total)", value: (s) => s.total.selections },
 ];
 
-const CURVES: { key: "articles" | "votes" | "voters"; title: string; yLabel: string; description: string }[] = [
+const CURVES: { key: "articles" | "participants" | "selections"; title: string; yLabel: string; description: string }[] = [
   {
     key: "articles",
     title: "Articles ingérés par jour",
     yLabel: "Articles par jour",
     description: "Articles récupérés ce jour-là (date d’ingestion).",
   },
-  { key: "votes", title: "Votes par jour", yLabel: "Votes par jour", description: "Votes enregistrés ce jour-là." },
   {
-    key: "voters",
-    title: "Votants distincts par jour",
-    yLabel: "Votants par jour",
-    description: "Comptes ayant voté ce jour-là. Un même compte compte une fois par jour : on ne peut pas additionner les jours.",
+    key: "participants",
+    title: "Participants par jour",
+    yLabel: "Participants par jour",
+    description: "Comptes ayant une une non vide ce jour-là. Un même compte compte une fois par jour : on ne peut pas additionner les jours.",
+  },
+  {
+    key: "selections",
+    title: "Unes enregistrées par jour",
+    yLabel: "Unes par jour",
+    description: "Unes enregistrées ce jour-là (une par compte et par jour au plus).",
   },
 ];
 

@@ -1,25 +1,13 @@
-import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ApiError } from "../../api/client";
-import { useAdminTopic, useAdminTopicVotes } from "../../api/hooks";
-import type { AdminSupportLevel as SupportLevel, AdminVoteChoice as VoteChoice } from "../../api/types";
-import { LineChart } from "../../components/admin/LineChart";
-import { Pager } from "../../components/admin/TableParts";
+import { useAdminTopic } from "../../api/hooks";
 import { usePageTitle } from "../../components/usePageTitle";
-import { formatFull } from "../../lib/format";
+import { formatEditionDate, formatFull, formatPercent } from "../../lib/format";
 import styles from "./Admin.module.css";
-import { STATE_LABELS } from "./AdminTopicsPage";
-
-const CHOICES: Record<VoteChoice, string> = {
-  more: "Il faut en parler",
-  not_priority: "Pas prioritaire",
-  unknown: "Je ne sais pas",
-};
-const LEVELS: Record<SupportLevel, string> = { low: "faible", medium: "moyen", high: "élevé" };
 
 const when = (iso: string | null) => (iso ? <time dateTime={iso}>{formatFull(iso)}</time> : "—");
 
-/** Détail d’un sujet : statut, raison à la une, votes (totaux, courbe, liste paginée) et articles. */
+/** Détail d’un sujet : approbations de l’édition en cours, historique par édition publiée et articles. */
 export default function AdminTopicDetailPage() {
   const params = useParams();
   const id = Number(params.id);
@@ -27,8 +15,6 @@ export default function AdminTopicDetailPage() {
   const topic = useAdminTopic(valid ? id : 0);
   const title = topic.data?.title ?? "Sujet";
   const h1 = usePageTitle(title);
-  const [votesPage, setVotesPage] = useState(1);
-  const votes = useAdminTopicVotes(valid ? id : 0, { page: String(votesPage) });
 
   const back = <Link to="/admin/sujets">← Tous les sujets</Link>;
   if (!valid || (topic.isError && topic.error instanceof ApiError && topic.error.status === 404)) {
@@ -54,7 +40,6 @@ export default function AdminTopicDetailPage() {
     );
 
   const t = topic.data;
-  const daily = t.votes.daily;
   return (
     <section className={styles.section}>
       {back}
@@ -66,113 +51,60 @@ export default function AdminTopicDetailPage() {
       <h2>Statut</h2>
       <dl className={styles.stats}>
         <div>
-          <dt>État</dt>
+          <dt>Approbations (édition en cours)</dt>
           <dd>
-            {STATE_LABELS[t.state]}
-            <small>vague {t.wave}</small>
+            {t.approvals}
+            <small>Comptes qui ont ce sujet dans leur une.</small>
           </dd>
         </div>
         <div>
-          <dt>Dernier changement d’état</dt>
-          <dd>
-            {when(t.state_changed_at)}
-            <small>Seul le dernier changement est conservé, pas d’historique.</small>
-          </dd>
+          <dt>Première apparition</dt>
+          <dd>{when(t.first_seen_at)}</dd>
         </div>
         <div>
-          <dt>Dernière évaluation</dt>
-          <dd>{when(t.evaluated_at)}</dd>
+          <dt>Dernière mise à jour</dt>
+          <dd>{when(t.updated_at)}</dd>
         </div>
         <div>
           <dt>Articles</dt>
           <dd>{t.article_count}</dd>
         </div>
         <div>
-          <dt>Sources distinctes</dt>
+          <dt>Médias distincts</dt>
           <dd>{t.source_count}</dd>
         </div>
-        <div>
-          <dt>Soutien</dt>
-          <dd>
-            {LEVELS[t.support.level]}
-            <small>
-              score {t.support.score.toFixed(2)} · {t.support.votes_count} votes
-            </small>
-          </dd>
-        </div>
-        <div>
-          <dt>À la une</dt>
-          <dd>
-            {t.front.on_front ? "Oui" : "Non"}
-            <small>{t.front.reason ? `Raison affichée : ${t.front.reason.label}` : "N’est pas à la une"}</small>
-          </dd>
-        </div>
       </dl>
 
-      <h2>Votes</h2>
-      <dl className={styles.stats}>
-        {(Object.keys(CHOICES) as VoteChoice[]).map((c) => (
-          <div key={c}>
-            <dt>{CHOICES[c]}</dt>
-            <dd>{t.votes[c]}</dd>
-          </div>
-        ))}
-        <div>
-          <dt>Total</dt>
-          <dd>{t.votes.total}</dd>
+      <h2>Historique par édition</h2>
+      {t.history.length === 0 ? (
+        <p role="status">Ce sujet n’a figuré dans aucune édition publiée.</p>
+      ) : (
+        <div className={styles.tableWrap}>
+          <table className={styles.table}>
+            <caption>Approbations par édition publiée, de la plus récente à la plus ancienne</caption>
+            <thead>
+              <tr>
+                <th scope="col">Édition</th>
+                <th scope="col">Rang</th>
+                <th scope="col">Approbations</th>
+                <th scope="col">Proportion</th>
+              </tr>
+            </thead>
+            <tbody>
+              {t.history.map((h) => (
+                <tr key={h.edition_date}>
+                  <th scope="row">
+                    <Link to={`/admin/editions/${h.edition_date}`}>{formatEditionDate(h.edition_date)}</Link>
+                  </th>
+                  <td className={styles.num}>{h.rank ?? "—"}</td>
+                  <td className={styles.num}>{h.approvals}</td>
+                  <td className={styles.num}>{formatPercent(h.proportion)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-        <div>
-          <dt>Votants</dt>
-          <dd>{t.votes.voters}</dd>
-        </div>
-      </dl>
-      <LineChart
-        title={`Votes par jour : ${t.title}`}
-        yLabel="Votes par jour (UTC)"
-        emptyText="Aucun vote pour le moment."
-        series={(Object.keys(CHOICES) as VoteChoice[]).map((c) => ({
-          id: c,
-          label: CHOICES[c],
-          points: daily.map((d) => ({ date: d.date, value: d[c] })),
-        }))}
-      />
-      <p className={styles.muted}>30 derniers jours au plus, ou depuis le premier vote ; jours en UTC.</p>
-
-      {votes.isPending && <p role="status">Chargement des votes…</p>}
-      {votes.isError && (
-        <p role="alert" className={styles.error}>
-          Impossible de charger la liste des votes.
-        </p>
       )}
-      {votes.data &&
-        (votes.data.total === 0 ? (
-          <p role="status">Aucun vote.</p>
-        ) : (
-          <>
-            <div className={styles.tableWrap}>
-              <table className={styles.table}>
-                <caption>Votes, du plus récent au plus ancien</caption>
-                <thead>
-                  <tr>
-                    <th scope="col">Date</th>
-                    <th scope="col">Choix</th>
-                    <th scope="col">Numéro de compte</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {votes.data.items.map((v, i) => (
-                    <tr key={`${v.account_id}-${i}`}>
-                      <td>{when(v.date)}</td>
-                      <td>{CHOICES[v.choice]}</td>
-                      <td className={styles.num}>{v.account_id}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <Pager page={votes.data.page} pageSize={votes.data.page_size} total={votes.data.total} unit="votes" onPage={setVotesPage} />
-          </>
-        ))}
 
       <h2>Articles</h2>
       {t.articles.length === 0 ? (

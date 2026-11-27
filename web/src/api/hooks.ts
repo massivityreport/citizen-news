@@ -148,7 +148,9 @@ export function useDeleteSource() {
 export const adminArticlesKey = (params: Record<string, string>) => ["admin", "articles", params] as const;
 export const adminTopicsKey = (params: Record<string, string>) => ["admin", "topics", params] as const;
 export const adminTopicKey = (id: number) => ["admin", "topic", id] as const;
-export const adminTopicVotesKey = (id: number, params: Record<string, string>) => ["admin", "topic", id, "votes", params] as const;
+export const adminEditionsKey = (params: Record<string, string>) => ["admin", "editions", params] as const;
+export const adminEditionKey = (date: string) => ["admin", "edition", date] as const;
+export const adminPreviewKey = ["admin", "preview"] as const;
 
 export function useAdminArticles(params: Record<string, string>) {
   return useQuery({ queryKey: adminArticlesKey(params), queryFn: () => api.adminArticles(params), placeholderData: keepPreviousData });
@@ -162,11 +164,22 @@ export function useAdminTopic(id: number) {
   return useQuery({ queryKey: adminTopicKey(id), queryFn: () => api.adminTopic(id) });
 }
 
-export function useAdminTopicVotes(id: number, params: Record<string, string>) {
+export function useAdminEditions(params: Record<string, string>) {
+  return useQuery({ queryKey: adminEditionsKey(params), queryFn: () => api.adminEditions(params), placeholderData: keepPreviousData });
+}
+
+export function useAdminEdition(date: string, enabled = true) {
+  return useQuery({ queryKey: adminEditionKey(date), queryFn: () => api.adminEdition(date), enabled });
+}
+
+/** Aperçu de la une : calculé à la demande (bouton « Recalculer »), jamais rafraîchi tout seul. */
+export function useAdminPreview() {
   return useQuery({
-    queryKey: adminTopicVotesKey(id, params),
-    queryFn: () => api.adminTopicVotes(id, params),
-    placeholderData: keepPreviousData,
+    queryKey: adminPreviewKey,
+    queryFn: api.adminPreview,
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
+    refetchOnMount: "always",
   });
 }
 

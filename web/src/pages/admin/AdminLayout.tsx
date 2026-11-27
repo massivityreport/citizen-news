@@ -12,6 +12,8 @@ const TABS = [
   { to: "/admin/sources", label: "Sources", end: false },
   { to: "/admin/articles", label: "Articles", end: false },
   { to: "/admin/sujets", label: "Sujets", end: false },
+  { to: "/admin/editions", label: "Éditions", end: false },
+  { to: "/admin/apercu", label: "Aperçu de la une", end: false },
 ];
 
 /** Coquille de /admin : connexion tant que la session n’est pas valide, puis en-tête, onglets et contenu. */

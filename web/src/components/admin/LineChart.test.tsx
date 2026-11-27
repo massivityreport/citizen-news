@@ -16,10 +16,10 @@ const pts = (...v: number[]) => v.map((value, i) => ({ date: `2026-11-0${i + 1}`
 
 describe("LineChart", () => {
   it("série vide : message et description pour lecteurs d’écran, pas de légende", () => {
-    render(<LineChart title="Votes" series={[{ id: "a", label: "A", points: [] }]} emptyText="Aucun vote." />);
-    const svg = chart("Votes");
-    expect(descOf(svg)).toBe("Aucun vote.");
-    expect(within(svg as unknown as HTMLElement).getByText("Aucun vote.", { selector: "text" })).toBeInTheDocument();
+    render(<LineChart title="Unes" series={[{ id: "a", label: "A", points: [] }]} emptyText="Aucune donnée." />);
+    const svg = chart("Unes");
+    expect(descOf(svg)).toBe("Aucune donnée.");
+    expect(within(svg as unknown as HTMLElement).getByText("Aucune donnée.", { selector: "text" })).toBeInTheDocument();
     expect(svg.querySelector("polyline")).toBeNull();
   });
 
@@ -41,7 +41,7 @@ describe("LineChart", () => {
     render(
       <LineChart
         title="Trois séries"
-        yLabel="Votes par jour"
+        yLabel="Unes par jour"
         series={[
           { id: "a", label: "Alpha", points: pts(1, 5, 2) },
           { id: "b", label: "Beta", points: pts(0, 1, 0) },
@@ -60,7 +60,7 @@ describe("LineChart", () => {
     expect(within(svg as unknown as HTMLElement).getByText("1 nov.")).toBeInTheDocument();
     expect(within(svg as unknown as HTMLElement).getByText("3 nov.")).toBeInTheDocument();
     expect(within(svg as unknown as HTMLElement).getByText("6")).toBeInTheDocument();
-    expect(within(svg as unknown as HTMLElement).getByText("Votes par jour")).toBeInTheDocument();
+    expect(within(svg as unknown as HTMLElement).getByText("Unes par jour")).toBeInTheDocument();
     expect(descOf(svg)).toMatch(/Alpha : 3 points, total 8, maximum 5.*Du 1 novembre 2026 au 3 novembre 2026/);
   });
 

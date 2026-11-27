@@ -63,3 +63,10 @@
 .stats dd small { font-weight: 400; font-size: .8rem; color: var(--c-muted); display: block; }
 .section h2 { margin: 0; font-size: 1.2rem; }
 .num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* Aperçu de la une */
+.previewBanner { margin: 0; padding: .8rem 1rem; background: var(--c-warn-bg); color: var(--c-warn-text); border: 2px solid var(--c-warn-border); border-radius: var(--radius); }
+.tieLine { margin: 0; }
+.ties { margin: 0; padding: 0; list-style: none; display: grid; gap: 1rem; }
+.cutAlert { margin: 0 0 .5rem; padding: .6rem .8rem; background: var(--c-danger-bg); color: var(--c-danger-text); border: 2px solid var(--c-danger); border-radius: var(--radius); font-weight: 700; }
+.cut { display: flex; align-items: center; gap: .8rem; color: var(--c-muted); font-weight: 700; border-top: 3px dashed var(--c-muted); padding-top: .4rem; }
