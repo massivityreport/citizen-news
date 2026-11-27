@@ -10,7 +10,7 @@ const LoginPage = lazy(() => import("./pages/LoginPage"));
 // Backoffice : hors de la mise en page publique, aucun lien depuis le site.
 const AdminLayout = lazy(() => import("./pages/admin/AdminLayout"));
 const AdminHomePage = lazy(() => import("./pages/admin/AdminPages").then((m) => ({ default: m.AdminHomePage })));
-const AdminSourcesPage = lazy(() => import("./pages/admin/AdminPages").then((m) => ({ default: m.AdminSourcesPage })));
+const AdminSourcesPage = lazy(() => import("./pages/admin/AdminSourcesPage"));
 const AdminArticlesPage = lazy(() => import("./pages/admin/AdminPages").then((m) => ({ default: m.AdminArticlesPage })));
 const AdminTopicsPage = lazy(() => import("./pages/admin/AdminPages").then((m) => ({ default: m.AdminTopicsPage })));
 const NotFoundPage = lazy(() => import("./pages/NotFoundPage"));

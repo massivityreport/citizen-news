@@ -1,4 +1,5 @@
 import type {
+  AdminSource,
   FrontTopic,
   HalvingConfig,
   Me,
@@ -131,6 +132,18 @@ export const api = {
       throw e;
     }
   },
+
+  adminSources: () => request<AdminSource[]>("/admin/sources"),
+
+  adminAddSource: (source: { name: string; feed_url: string }) =>
+    request<AdminSource>("/admin/sources", { method: "POST", body: source }),
+
+  adminSetSourceActive: (id: number, active: boolean) =>
+    request<AdminSource>(`/admin/sources/${id}/${active ? "reactivate" : "deactivate"}`, { method: "POST" }),
+
+  /** `confirm` : nombre d’articles qui seront supprimés (le serveur refuse s’il a changé). */
+  adminDeleteSource: (id: number, confirm: number) =>
+    request<{ id: number; deleted_articles: number }>(`/admin/sources/${id}?confirm=${confirm}`, { method: "DELETE" }),
 
   halvingConfig: () => request<HalvingConfig>("/halving/config"),
 };

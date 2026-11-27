@@ -57,3 +57,12 @@ export interface HalvingConfig {
 export interface Me {
   email: string;
 }
+
+export interface AdminSource {
+  id: number;
+  name: string;
+  feed_url: string;
+  active: boolean;
+  article_count: number;
+  last_article_at: string | null;
+}

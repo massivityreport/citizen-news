@@ -24,6 +24,5 @@ function Soon({ title }: { title: string }) {
   );
 }
 
-export const AdminSourcesPage = () => <Soon title="Sources" />;
 export const AdminArticlesPage = () => <Soon title="Articles" />;
 export const AdminTopicsPage = () => <Soon title="Sujets" />;
