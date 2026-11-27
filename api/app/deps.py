@@ -1,5 +1,7 @@
 """Shared FastAPI dependencies."""
 
+from datetime import UTC, datetime
+
 from fastapi import Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
@@ -9,6 +11,11 @@ from app.services import admin as admin_service, auth
 from config.settings import get_settings
 
 SESSION_COOKIE = "cn_session"
+
+
+def clock() -> datetime:
+    """Current instant (UTC). A dependency so tests can pin the time with `app.dependency_overrides`."""
+    return datetime.now(UTC)
 
 
 def session_token(request: Request) -> str | None:

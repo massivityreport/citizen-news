@@ -1,6 +1,7 @@
 """Application settings, read from environment variables (and .env in development)."""
 
 from functools import lru_cache
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -42,6 +43,16 @@ class Settings(BaseSettings):
     rate_limit_magic_link_per_email: int = 5
     rate_limit_magic_link_per_ip: int = 20
     rate_limit_verify_per_ip: int = 30
+    # Une writes (PUT/DELETE/merge on /api/me/une*) per account, over their own short window.
+    rate_limit_une_writes_per_account: int = Field(60, ge=1)
+    rate_limit_une_window_seconds: int = Field(60, ge=1)
+    # Edition calendar: the collective une closes every day at `edition_hour`:00 local time (see services/edition_calendar.py).
+    edition_hour: int = Field(17, ge=0, le=23)
+    edition_timezone: str = "Europe/Paris"
+    # A topic is in the daily pool when one of its articles is newer than this (independent of the clustering window).
+    pool_window_hours: int = Field(24, ge=1, le=24 * 30)
+    # "Radar" tab: topics covered by at most this many distinct media.
+    radar_max_sources: int = Field(3, ge=1)
     # Allows `python -m app.cli seed-demo` (fictional media and topics). Development only: refused with COOKIE_SECURE=true.
     demo_seed: bool = False
     # Back office: one shared password (no accounts). SecretStr keeps it out of reprs and logs.
@@ -60,6 +71,14 @@ class Settings(BaseSettings):
             return [o.strip() for o in value.split(",") if o.strip()]
         return value
 
+    @field_validator("edition_timezone")
+    @classmethod
+    def _known_timezone(cls, value: str) -> str:
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError):
+            raise ValueError(f"EDITION_TIMEZONE inconnu : {value!r} (ex. Europe/Paris)")
+        return value
 
     @model_validator(mode="after")
     def _smtp_needs_host(self):

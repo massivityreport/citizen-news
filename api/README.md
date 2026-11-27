@@ -8,7 +8,7 @@ Backend FastAPI + PostgreSQL. Contrat HTTP : [`docs/api-contract.md`](../docs/ap
 flux RSS ──ingest──▶ articles ──cluster──▶ topics
 ```
 
-V2 : chaque citoyen compose sa une de 10 sujets (table `selections`), figée en une une collective à 17 h (`editions`, `edition_topics`). Le schéma est posé (migration 0009, **irréversible côté données** : les votes et le halving V1 ont été supprimés) ; bassin, une personnelle et clôture arrivent avec les tâches suivantes (contrat : [`docs/api-contract.md`](../docs/api-contract.md)).
+V2 : chaque citoyen compose sa une de 10 sujets (table `selections`), figée en une une collective à 17 h (`editions`, `edition_topics`). Le schéma est posé (migration 0009, **irréversible côté données** : les votes et le halving V1 ont été supprimés) ; le bassin, la une personnelle et le brouillon du lien magique sont en place ; la clôture et les éditions publiées arrivent avec la tâche suivante (contrat : [`docs/api-contract.md`](../docs/api-contract.md)).
 
 ```
 ```
@@ -37,7 +37,7 @@ La liste de départ compte 12 médias ; les URL ont été vérifiées le 26/11/2
 | Paramètre | Défaut | Effet |
 |---|---|---|
 | `similarity_threshold` | 0.35 | Similarité cosinus minimale (entre 0 et 1, exclus) pour rattacher un article à un sujet existant. |
-| `window_hours` | 48 | Fenêtre de temps : seuls les articles publiés dans la fenêtre sont regroupés, et un sujet sans nouvel article depuis plus longtemps n'accepte plus de rattachement. Seuls les sujets actifs dans cette fenêtre sont éligibles (le bassin V2 la resserrera à `POOL_WINDOW_HOURS`). |
+| `window_hours` | 48 | Fenêtre de temps : seuls les articles publiés dans la fenêtre sont regroupés, et un sujet sans nouvel article depuis plus longtemps n'accepte plus de rattachement. Le bassin est plus étroit : `POOL_WINDOW_HOURS` (24 h), indépendant de ce paramètre. |
 | `min_sources_for_front` | 2 | Nombre de **médias distincts** minimal pour qu'un sujet soit visible. Plusieurs articles d'un même média comptent pour une seule source. |
 
 #### Comment ça marche
@@ -50,13 +50,18 @@ Le titre du sujet est celui de l'article le plus représentatif (le plus proche 
 
 - Trop **bas** : des sujets distincts fusionnent (le même ministre dans deux affaires différentes).
 - Trop **haut** : un même événement reste éclaté en plusieurs sujets à une seule source, donc invisible.
-- Méthode : lancer `refresh` sur une base vide, parcourir les sujets (`GET /api/admin/topics`, ou le bassin quand il existera) et repérer, d'une part, les sujets qui mélangent des articles sans rapport (monter le seuil), d'autre part les doublons évidents entre sujets (baisser le seuil). Sur les vrais flux (~350 articles), 0,35 regroupe correctement les articles d'un même événement (10 médias sur une même affaire judiciaire) sans fusion abusive observée.
+- Méthode : lancer `refresh` sur une base vide, parcourir les sujets (`GET /api/admin/topics`, ou le bassin `GET /api/topics/pool?tab=recent`) et repérer, d'une part, les sujets qui mélangent des articles sans rapport (monter le seuil), d'autre part les doublons évidents entre sujets (baisser le seuil). Sur les vrais flux (~350 articles), 0,35 regroupe correctement les articles d'un même événement (10 médias sur une même affaire judiciaire) sans fusion abusive observée.
 - Le TF-IDF est réajusté à chaque exécution sur les articles de la fenêtre (les poids IDF varient donc d'un run à l'autre) ; le résultat reste déterministe pour un état de base et une date donnés. Un article déjà rattaché n'est jamais réévalué : **changer le seuil ne recalcule pas l'existant** et ne vaut que pour les nouveaux articles.
 - Après changement, repartir d'une base vide (`docker compose down -v`) : les rattachements existants ne sont pas recalculés.
 
 ### Endpoints
 
-Plus de route publique de sujets pour l'instant : `/api/topics/front`, `/api/vote/next`, `/api/votes*` et `/api/halving/config` (V1) sont supprimés ; le bassin (`GET /api/topics/pool`) arrive avec la tâche suivante. Les sujets se consultent dans le backoffice (`/api/admin/topics`). `app/services/topics.py` garde l'éligibilité (au moins `min_sources_for_front` médias distincts, activité dans la fenêtre) et la construction des `TopicCard`.
+`/api/topics/front`, `/api/vote/next`, `/api/votes*` et `/api/halving/config` (V1) sont supprimés. Les sujets se consultent dans le bassin (`GET /api/topics/pool`) et dans le backoffice (`/api/admin/topics`).
+
+- **Bassin** (`app/services/pool.py`) : `eligible_pool(session, now, topic_ids=None)` est LA règle d'éligibilité (un article daté — `published_at`, sinon `fetched_at` — dans les `POOL_WINDOW_HOURS` dernières heures, et au moins `min_sources_for_front` médias distincts sur l'ensemble des articles du sujet) : une requête SQL agrégée, réutilisée par les écritures de la une et, à la tâche suivante, par la clôture. La fenêtre de regroupement (`window_hours`, 48 h) n'est pas touchée. La route (`app/routers/topics.py`) fait un nombre constant de requêtes quel que soit le nombre de sujets. `total` = nombre de sujets de l'onglet, `items` plafonné à 300. Réponse `Cache-Control: no-store`.
+- **Calendrier** (`app/services/edition_calendar.py`) : `edition_state(session, now)` → `edition_date`, `closes_at` (UTC), `open`. Clôture à `EDITION_HOUR` h `EDITION_TIMEZONE` (zoneinfo, heure d'été gérée). Dès l'heure de clôture l'édition est fermée même sans publication ; elle rouvre pour le lendemain (une vide) quand une ligne `editions` existe pour le jour local. L'horloge est la dépendance `app.deps.clock` (surchargeable dans les tests avec `app.dependency_overrides`).
+- **Une personnelle** (`app/services/une.py`, routes `/api/me/une*`) : chaque écriture est une transaction qui verrouille d'abord la ligne du compte (`SELECT … FOR UPDATE`) : deux écritures du même compte sont sérialisées, la limite de 10 ne peut pas être dépassée par des requêtes simultanées. `PUT /api/me/une` (remplacement) exige des sujets existants, pas dans le bassin ; l'ajout unitaire exige le bassin (`422`), `merge` ignore les sujets inconnus ou hors bassin (compte dans `ignored`, tout comme ceux qui ne tiennent plus dans les 10 places ; un sujet déjà dans la une n'est ni ajouté ni ignoré).
+- **Brouillon du lien magique** : `login_tokens.draft` (`{"topic_ids": [...]}`), jamais dans l'URL ni les logs. `POST /api/auth/verify` consomme le jeton (le brouillon est effacé avec lui ; un jeton expiré perd son brouillon à la purge suivante) puis fusionne comme `/me/une/merge` si l'édition est ouverte. Une panne de fusion ne bloque pas la connexion (`draft: null`).
 
 ### Données de démonstration
 
@@ -106,7 +111,7 @@ GET /api/me · POST /api/auth/logout   (cookie requis)
 | `POST /api/auth/magic-link` | e-mail normalisé (haché en mémoire) | `RATE_LIMIT_MAGIC_LINK_PER_EMAIL` (5) |
 | `POST /api/auth/verify` | IP | `RATE_LIMIT_VERIFY_PER_IP` (30) |
 
-Fenêtre : `RATE_LIMIT_WINDOW_SECONDS` (3600). Les écritures de la une (par compte) auront leur limite avec la tâche « une personnelle ». Ces variables sont transmises à l'API par le compose.
+Fenêtre : `RATE_LIMIT_WINDOW_SECONDS` (3600). Les écritures de la une (`PUT`/`DELETE`/`merge` sur `/api/me/une*`) ont leur limite par compte : `RATE_LIMIT_UNE_WRITES_PER_ACCOUNT` (60) par `RATE_LIMIT_UNE_WINDOW_SECONDS` (60) ; la lecture n'est pas limitée. Réglages d'édition : `EDITION_HOUR` (17), `EDITION_TIMEZONE` (Europe/Paris), `POOL_WINDOW_HOURS` (24), `RADAR_MAX_SOURCES` (3). Ces variables sont transmises à l'API par le compose.
 
 **Limites connues** : la limite par e-mail est aussi un verrou. Quelqu'un qui connaît l'adresse d'une victime peut épuiser ses 5 demandes et l'empêcher de recevoir un lien pendant une heure (compromis assumé : sans cela, l'API servirait à inonder une boîte de courriels). Derrière un reverse proxy **sans** `TRUST_PROXY=true`, tous les clients partagent l'IP du proxy et donc la limite par IP (20/h) : un seul abus bloque tout le monde ; avec `TRUST_PROXY=true`, la limite redevient individuelle. L'IP est celle de la connexion ; avec `TRUST_PROXY=true`, c'est la **dernière** entrée de `X-Forwarded-For` (celle qu'ajoute le proxy de confiance : les entrées précédentes sont falsifiables). N'activez `TRUST_PROXY` que derrière un proxy qui écrase ou complète cet en-tête, sinon n'importe qui contourne la limite.
 

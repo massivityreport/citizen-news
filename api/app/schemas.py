@@ -1,6 +1,6 @@
 """HTTP response models (see docs/api-contract.md)."""
 
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, Field
 
@@ -24,17 +24,58 @@ class TopicCard(BaseModel):
     image_url: str | None
 
 
+class PoolOut(BaseModel):
+    edition_date: date
+    closes_at: datetime
+    open: bool
+    total: int  # topics of the tab (items is capped at 300)
+    items: list[TopicCard]
+
+
+class UneOut(BaseModel):
+    edition_date: date
+    closes_at: datetime
+    open: bool
+    topic_ids: list[int]
+
+
+class MergeOut(BaseModel):
+    added: int
+    ignored: int
+    une: UneOut
+
+
 # --- Authentication ---
 
 import re
+from typing import Annotated
 
 from pydantic import field_validator
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s.]+(\.[^@\s.]+)+$")
 
 
+TopicId = Annotated[int, Field(gt=0, le=2_147_483_647)]
+
+
+class TopicIds(BaseModel):
+    """A list of topic ids typed by a citizen: positive integers, deduplicated (order kept), at most 10 once
+    deduplicated (the raw length is capped too, to protect the parser)."""
+
+    topic_ids: list[TopicId] = Field(max_length=100)
+
+    @field_validator("topic_ids")
+    @classmethod
+    def _dedupe(cls, value: list[int]) -> list[int]:
+        value = list(dict.fromkeys(value))
+        if len(value) > 10:
+            raise ValueError("10 sujets au plus")
+        return value
+
+
 class MagicLinkRequest(BaseModel):
     email: str
+    draft: TopicIds | None = None  # the une typed before logging in; merged by /auth/verify
 
     @field_validator("email")
     @classmethod
@@ -51,6 +92,16 @@ class VerifyRequest(BaseModel):
 
 class EmailOut(BaseModel):
     email: str
+
+
+class DraftResult(BaseModel):
+    added: int
+    ignored: int
+
+
+class VerifyOut(BaseModel):
+    email: str
+    draft: DraftResult | None
 
 
 class AdminLoginRequest(BaseModel):

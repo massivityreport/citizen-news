@@ -10,7 +10,7 @@ Contrat des routes de Citizen News V2 : chaque citoyen compose sa une de 10 suje
 - **Compteurs d'approbation** : jamais dans une réponse destinée à un citoyen avant la publication (ni bassin, ni `/me/une`, ni erreur). Ils apparaissent dans l'édition publiée et dans le backoffice.
 - **Remplacement net de V1** (décision de l'humain) : plus de vote, de halving, de `support`/`reason`, de `/api/topics/front`, `/api/vote/next`, `/api/votes*`, `/api/halving/config`. La migration 0009 a supprimé ces données.
 
-**État d'implémentation** — implémenté : `GET /api/health`, l'authentification (sans brouillon), le backoffice sources et articles, `GET /api/admin/topics` (+ détail) et `GET /api/admin/stats` dans leur forme réduite décrite plus bas, la `TopicCard` V2. **Cible, à venir** (tâches suivantes) : bassin, une personnelle, brouillon du lien magique, éditions publiées, clôture, aperçu et listes d'éditions admin, `approvals`/participants admin. Le schéma (`selections`, `editions`, `edition_topics`, `login_tokens.draft`) est posé.
+**État d'implémentation** — implémenté : `GET /api/health`, l'authentification avec brouillon, le bassin (`GET /api/topics/pool`), la une personnelle (`/api/me/une*`), le calendrier d'édition, le backoffice sources et articles, `GET /api/admin/topics` (+ détail) et `GET /api/admin/stats` dans leur forme réduite décrite plus bas, la `TopicCard` V2. **Cible, à venir** (tâches suivantes) : éditions publiées, agrégation et clôture, aperçu et listes d'éditions admin, `approvals`/participants admin. Les sections ci-dessous marquées « (implémenté) » le sont ; les autres décrivent la cible.
 
 ## Types communs
 
@@ -46,7 +46,7 @@ Pour chaque entrée de flux, premier candidat valide parmi, dans l'ordre : `medi
 
 **Réingestion** : les articles déjà en base n'ont pas d'image. Quand un article existant a `image_url` à `NULL` et que son flux en fournit maintenant une valide, le cycle d'ingestion normal la renseigne (mise à jour de cette colonne seule : ni `topic_id`, ni `published_at`, ni regroupement). Une image déjà enregistrée n'est jamais remplacée. Les articles qui ont quitté les flux restent sans image ; il n'y a pas de commande de réingestion séparée.
 
-## Bassin de sujets
+## Bassin de sujets (implémenté)
 
 ### `GET /api/topics/pool?tab=random|recent|radar&seed=<chaîne>` — public
 
@@ -62,7 +62,11 @@ Pour chaque entrée de flux, premier candidat valide parmi, dans l'ordre : `medi
 
 Les sujets déjà dans la une de l'utilisateur restent dans la liste (le client les marque « Dans ma une »). Aucun compteur d'approbation.
 
-## Une personnelle
+Précisions : `total` = nombre de sujets de l'onglet (`items` est plafonné à 300) ; `edition_date`, `closes_at` et `open` sont ceux de la une en cours (voir ci-dessous). `seed` invalide ou `tab` inconnu → `422`. Réponse `Cache-Control: no-store` (elle dépend de la graine et de l'heure). Un article compte pour la fenêtre par sa date `published_at`, à défaut `fetched_at`.
+
+**Calendrier de l'édition.** Avant la clôture d'un jour sans édition publiée : `edition_date` = jour local, `open: true`. Dès l'heure de clôture sans édition publiée : même `edition_date`, `open: false` (période de publication, même si le worker est en retard). Une fois l'édition du jour local publiée : `edition_date` = lendemain, `open: true`, `closes_at` = demain 17:00 locale. 17:00 Paris = 15:00 UTC l'été, 16:00 UTC l'hiver.
+
+## Une personnelle (implémenté)
 
 Session citoyenne requise (`cn_session`), `401` sinon. La une est celle de l'édition en cours (`edition_date` ci-dessus). Un compte = une une par `edition_date` (unicité en base : `selections`). 10 places au plus, sans ordre ni poids, moins de 10 autorisé.
 
@@ -71,12 +75,16 @@ Corps commun (« une ») : `{ "edition_date": "2026-11-27", "closes_at": "2026-1
 | Route | Effet |
 |---|---|
 | `GET /api/me/une` | `200` → une |
-| `PUT /api/me/une` `{"topic_ids": [...]}` | remplace toute la une (≤ 10, dédoublonnés, sujets existants) ; plus de 10 ou sujet inconnu → `422` · `200` → une |
-| `PUT /api/me/une/topics/{id}` | ajoute un sujet (idempotent) ; une pleine → `409 "Votre une est complète"` ; sujet inconnu → `404` · `200` → une |
+| `PUT /api/me/une` `{"topic_ids": [...]}` | remplace toute la une (dédoublonnés, ≤ 10 après dédoublonnage, sujets existants — le bassin n'est pas exigé ici) ; plus de 10, identifiant invalide ou sujet inconnu → `422` · `200` → une |
+| `PUT /api/me/une/topics/{id}` | ajoute un sujet (idempotent, même hors bassin s'il est déjà dans la une) ; une pleine → `409 "Votre une est complète"` ; sujet inconnu → `404` ; sujet existant mais hors bassin → `422 "Ce sujet n'est plus au bassin du jour"` · `200` → une |
 | `DELETE /api/me/une/topics/{id}` | retire (idempotent) · `200` → une |
-| `POST /api/me/une/merge` `{"topic_ids": [...]}` | fusionne sans écraser : l'existant reste, les nouveaux s'ajoutent jusqu'à 10 places, sujets inconnus ou hors bassin ignorés · `200` → `{"added": 2, "ignored": 1, "une": {…}}` |
+| `POST /api/me/une/merge` `{"topic_ids": [...]}` | fusionne sans écraser : l'existant reste, les nouveaux s'ajoutent jusqu'à 10 places, sujets inconnus ou hors bassin ignorés (ainsi que ceux qui ne tiennent plus dans les 10 places : ils comptent dans `ignored` ; un sujet déjà présent n'est ni ajouté ni ignoré) ; plus de 10 identifiants distincts → `422` · `200` → `{"added": 2, "ignored": 1, "une": {…}}` |
 
-Toute écriture : `409 {"detail": "La clôture est passée, la une du jour n'est plus modifiable"}` si `open` est faux. `open` est faux dès l'heure de clôture, même si le worker est en retard ; il redevient vrai (pour l'édition suivante, une vide) quand l'édition du jour est publiée. Limitation de débit sur les écritures (par compte, `429`).
+Toute écriture : `409 {"detail": "La clôture est passée, la une du jour n'est plus modifiable"}` si `open` est faux. `open` est faux dès l'heure de clôture, même si le worker est en retard ; il redevient vrai (pour l'édition suivante, une vide) quand l'édition du jour est publiée.
+
+**Édition ciblée en cas de retard.** `edition_state` cible la plus ancienne clôture **due non publiée** tant qu'elle existe : `open: false`, ses unes enregistrées restent lisibles (`GET /api/me/une`) et aucune écriture n'est possible, même si le retard dépasse minuit ou dure plusieurs jours ; l'édition suivante s'ouvre une fois celle-ci publiée. Une date due n'est « en attente » que s'il existe déjà une édition publiée plus ancienne (tous les jours après la dernière édition publiée, dont la clôture est passée) ou, avant toute édition, si des unes sont enregistrées pour cette date (pas d'édition fantôme au premier lancement : sans cela on cible la prochaine clôture, comme aujourd'hui). `services/edition_calendar.pending_editions(session, now)` expose ces dates dues non publiées (la plus ancienne d'abord) pour `close_due_edition`.
+
+**Clôture et sujets hors bassin.** `PUT /api/me/une` accepte des sujets existants hors bassin, mais la clôture ne compte que les sujets qui passent `eligible_pool` **au moment de la clôture** : les autres restent dans la une du citoyen sans rien totaliser. Les articles datés de plus d'1 h dans le futur sont ignorés pour la fenêtre du bassin. Limitation de débit sur les écritures (par compte, `429` avec `Retry-After` ; `RATE_LIMIT_UNE_WRITES_PER_ACCOUNT` par `RATE_LIMIT_UNE_WINDOW_SECONDS`, 60 par minute par défaut ; la lecture n'est pas limitée). Les écritures d'un même compte sont sérialisées (verrou sur le compte) : la limite de 10 ne peut pas être dépassée par des requêtes simultanées. Réponses `Cache-Control: no-store`. Les identifiants de `topic_ids` sont des entiers positifs (`422` sinon).
 
 ## Éditions publiées
 
@@ -103,7 +111,7 @@ Capture **figée** (titre, résumé, sources, nombre de médias… copiés à la
 
 **Clôture** — `close_due_edition(session, now)`, appelée par le worker (`python -m app.cli run`, vérification **chaque minute**, tick séparé de l'ingestion de 15 min) : au premier passage après l'heure locale de clôture, s'il n'existe pas d'édition pour `edition_date`, agrège et publie. Idempotente et atomique (une transaction ; verrou advisory ou contrainte unique sur `editions.edition_date` : deux workers simultanés → une seule édition). Rattrape un retard (worker arrêté des heures ou des jours : publie l'édition du jour dû, une seule, la plus récente due, pas d'éditions fantômes). Horloge injectable (`now`) ; tests à l'heure d'été (17:00 locale = 15:00 UTC l'été, 16:00 UTC l'hiver).
 
-## Authentification (lien magique)
+## Authentification (lien magique) (implémenté, brouillon compris)
 
 ### `POST /api/auth/magic-link`
 
@@ -118,7 +126,7 @@ Le serveur garde le brouillon **avec le jeton** (jamais dans l'URL ; supprimé q
 
 Requête : `{"token": "…"}` (jeton à usage unique, durée de vie limitée).
 
-- `200` → `{"email": "a@example.org", "draft": {"added": 2, "ignored": 1} | null}` : si l'édition est ouverte et qu'un brouillon est attaché, il est fusionné (règle de `/api/me/une/merge`) dans la une du compte, même si le navigateur est différent ; édition fermée → brouillon ignoré, `draft: null`. En-tête `Set-Cookie` de session `httpOnly` (`SameSite=Lax`, `Secure` hors développement).
+- `200` → `{"email": "a@example.org", "draft": {"added": 2, "ignored": 1} | null}` : si l'édition est ouverte et qu'un brouillon est attaché, il est fusionné (règle de `/api/me/une/merge`) dans la une du compte, même si le navigateur est différent ; édition fermée → brouillon ignoré, `draft: null`. Si la fusion échoue (panne), la connexion réussit quand même avec `draft: {"added": 0, "ignored": n}`. En-tête `Set-Cookie` de session `httpOnly` (`SameSite=Lax`, `Secure` hors développement).
 - `400` jeton invalide, expiré ou déjà utilisé · `429`.
 
 ### `POST /api/auth/logout`
