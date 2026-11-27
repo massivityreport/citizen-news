@@ -54,7 +54,7 @@ def listing(session):
 def test_aggregates_without_any_vote_or_state_field(admin, listing):
     big, small, bare = listing
     items = {i["id"]: i for i in admin.get(LIST).json()["items"]}
-    assert set(items[big]) == {"id", "title", "updated_at", "article_count", "source_count", "image_url"}
+    assert set(items[big]) == {"id", "title", "updated_at", "article_count", "source_count", "approvals", "image_url"}
     assert items[big]["title"] == "Beta" and items[big]["updated_at"].endswith("Z")
     assert (items[big]["article_count"], items[big]["source_count"]) == (5, 3)
     assert items[big]["image_url"] == "https://img.example/new.jpg"
@@ -75,8 +75,10 @@ def test_sorts(admin, listing, sort, order, expected):
     assert [i["title"] for i in res.json()["items"]] == expected
 
 
-def test_default_sort_is_most_recently_updated(admin, listing):
-    assert [i["title"] for i in admin.get(LIST).json()["items"]] == ["alpha", "Beta", "Gamma"]
+def test_default_sort_is_approvals_then_id(admin, listing):
+    # no approval anywhere: ties on approvals break on id, descending like the sort
+    big, small, bare = listing
+    assert [i["id"] for i in admin.get(LIST).json()["items"]] == [bare, small, big]
 
 
 def test_ties_break_on_id(admin, session):
@@ -140,7 +142,7 @@ def test_detail_has_no_vote_support_front_or_state(admin, session):
     d = detail(admin, t.id)
     assert set(d) == {
         "id", "title", "summary", "first_seen_at", "updated_at", "article_count", "source_count", "articles",
-        "articles_truncated",
+        "articles_truncated", "approvals", "history",
     }
     assert (d["article_count"], d["source_count"]) == (3, 2)
     assert [a["title"] for a in d["articles"]][0].startswith("Un sujet")  # newest first
@@ -190,7 +192,7 @@ def test_no_personal_data_in_any_admin_response(admin, session):
         admin.get(url).text
         for url in (
             "/api/admin/articles?page_size=200", "/api/admin/topics?page_size=200", f"/api/admin/topics/{t.id}",
-            "/api/admin/sources", "/api/admin/stats",
+            "/api/admin/sources", "/api/admin/stats", "/api/admin/edition/preview", "/api/admin/editions",
         )
     ]
     assert all(bodies)

@@ -124,10 +124,10 @@ def test_late_across_midnight_keeps_yesterdays_edition_closed():
     assert (s.edition_date, s.open) == (date(2026, 11, 26), False)
 
 
-def test_late_by_several_days_targets_the_oldest_missed_day():
+def test_late_by_several_days_without_unes_targets_the_most_recent_due_day():
     now = utc(2026, 11, 27, 10, 0)
     s = _compute(now, last_published=date(2026, 11, 22))
-    assert (s.edition_date, s.open) == (date(2026, 11, 23), False)
+    assert (s.edition_date, s.open) == (date(2026, 11, 26), False)  # no ghost edition for the days in between
     assert _due(now, date(2026, 11, 22)) == [date(2026, 11, 23), date(2026, 11, 24), date(2026, 11, 25), date(2026, 11, 26)]
 
 
@@ -188,3 +188,44 @@ def test_db_late_worker_keeps_recorded_unes_readable_and_lists_pending(session, 
 
 def test_db_first_launch_queries(session, topics):
     assert pending_editions(session, utc(2026, 11, 27, 22, 0)) == []
+
+
+# --- target_edition: one rule for the calendar, the preview, the approvals and the closing ---
+
+def test_pick_target_is_the_oldest_with_unes_else_the_most_recent():
+    from app.services.edition_calendar import pick_target
+
+    days = [date(2026, 11, n) for n in (23, 24, 25, 26)]
+    assert pick_target(days) == date(2026, 11, 26)
+    assert pick_target(days, [date(2026, 11, 24), date(2026, 11, 26)]) == date(2026, 11, 24)
+    assert pick_target(days, [date(2026, 11, 26)]) == date(2026, 11, 26)
+
+
+def test_compute_state_uses_the_oldest_day_with_unes():
+    now = utc(2026, 11, 27, 10, 0)
+    s = _compute(now, last_published=date(2026, 11, 22), selection_dates=[date(2026, 11, 24)])
+    assert (s.edition_date, s.open) == (date(2026, 11, 24), False)
+
+
+def test_db_target_edition_catches_up_one_day_with_unes_per_step(session, topics):
+    from app.models.entities import Account
+    from app.services.edition_calendar import target_edition
+
+    a = Account(email="x@example.org")
+    session.add(a)
+    session.commit()
+    session.add(Edition(edition_date=date(2026, 11, 22), participants=0))
+    session.add_all(Selection(account_id=a.id, edition_date=d, topic_id=topics[0]) for d in (date(2026, 11, 23), date(2026, 11, 25)))
+    session.commit()
+    now = utc(2026, 11, 27, 10, 0)
+    assert target_edition(session, now) == date(2026, 11, 23)
+    assert edition_state(session, now).edition_date == date(2026, 11, 23)
+    session.add(Edition(edition_date=date(2026, 11, 23), participants=1))
+    session.commit()
+    assert target_edition(session, now) == date(2026, 11, 25)  # the 24th (no une) is skipped, the 25th is not
+    session.add(Edition(edition_date=date(2026, 11, 25), participants=1))
+    session.commit()
+    assert target_edition(session, now) == date(2026, 11, 26)  # then the most recent due one, empty
+    session.add(Edition(edition_date=date(2026, 11, 26), participants=0))
+    session.commit()
+    assert target_edition(session, now) is None and edition_state(session, now).open is True

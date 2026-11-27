@@ -115,7 +115,7 @@ def test_catch_up_after_midnight_publishes_the_due_day(session, media):
     assert edition.edition_date == DAY and edition.published_at == late
 
 
-def test_catch_up_after_several_days_publishes_only_the_latest_due(session, media):
+def test_catch_up_publishes_each_day_with_unes_and_no_ghost_for_the_empty_ones(session, media):
     previous_edition(session, date(2026, 11, 20))
     now = datetime(2026, 11, 24, 10, 0, tzinfo=UTC)  # 21, 22, 23 are due (24 not yet)
     t = topic(session, media, now=now)
@@ -123,9 +123,10 @@ def test_catch_up_after_several_days_publishes_only_the_latest_due(session, medi
         [acct] = make_accounts(session, 1)
         put_une(session, acct, day, [t.id])
     session.commit()
+    assert close_due_edition(session, now).edition_date == date(2026, 11, 21)  # a day with unes is never skipped
     edition = close_due_edition(session, now)
-    assert edition.edition_date == date(2026, 11, 23) and edition.participants == 1
-    assert [e.edition_date for e in editions(session)] == [date(2026, 11, 20), date(2026, 11, 23)]
+    assert edition.edition_date == date(2026, 11, 23) and edition.participants == 1  # the 22nd (no une): no ghost
+    assert [e.edition_date for e in editions(session)] == [date(2026, 11, 20), date(2026, 11, 21), date(2026, 11, 23)]
     assert close_due_edition(session, now) is None
 
 
@@ -167,7 +168,7 @@ def test_unique_constraint_is_the_safety_net(session, media, monkeypatch):
     """Even if the lock and the pending check let a second closing through, the database refuses a duplicate."""
     two_unes(session, media)
     close_due_edition(session, CLOSING)
-    monkeypatch.setattr(edition_close, "pending_editions", lambda s, n: [DAY])
+    monkeypatch.setattr(edition_close, "target_edition", lambda s, n: DAY)
     assert close_due_edition(session, CLOSING) is None
     assert len(editions(session)) == 1
 
@@ -281,3 +282,57 @@ def test_a_write_started_during_the_closing_goes_to_tomorrow(session, media, mon
     assert out["une"].state.edition_date == date(2026, 11, 28) and out["une"].state.open
     session.expire_all()
     assert [s.edition_date for s in session.scalars(select(Selection))] == [date(2026, 11, 28)]
+
+
+# --- a stopped worker: days with unes are never skipped, empty days have no ghost edition ----------
+
+DAY1, DAY2, DAY3 = date(2026, 11, 24), date(2026, 11, 25), date(2026, 11, 26)
+LATE = datetime(2026, 11, 26, 20, 0, tzinfo=UTC)  # three closings (24, 25, 26) have passed
+
+
+def stopped_worker(session, media, days):
+    previous_edition(session, date(2026, 11, 23))
+    t = topic(session, media, "T", now=LATE)
+    for day in days:
+        [acct] = make_accounts(session, 1)
+        put_une(session, acct, day, [t.id])
+    session.commit()
+    return t
+
+
+def preview_ranking(client, now):
+    client.app.dependency_overrides[clock] = lambda: now
+    assert client.post("/api/admin/login", json={"password": __import__("tests.test_admin_auth", fromlist=["x"]).PASSWORD}).status_code == 200
+    body = client.get("/api/admin/edition/preview").json()
+    return body["edition_date"], body["participants"], [(t["topic_id"], t["approvals"]) for t in body["topics"]]
+
+
+def test_stopped_three_days_with_unes_on_day_one_only(session, media, client):
+    t = stopped_worker(session, media, [DAY1])
+    assert preview_ranking(client, LATE) == ("2026-11-24", 1, [(t.id, 1)])
+    first = close_due_edition(session, LATE)
+    assert (first.edition_date, first.participants) == (DAY1, 1)  # the day with unes is published, not skipped
+    assert preview_ranking(client, LATE) == ("2026-11-26", 0, [])  # the most recent due one, empty
+    second = close_due_edition(session, LATE)
+    assert (second.edition_date, second.participants) == (DAY3, 0)
+    assert [e.edition_date for e in editions(session)] == [date(2026, 11, 23), DAY1, DAY3]  # no ghost for the 25th
+    assert close_due_edition(session, LATE) is None
+
+
+def test_unes_on_days_one_and_three_give_two_editions_in_order(session, media, client):
+    t = stopped_worker(session, media, [DAY1, DAY3])
+    expected = [(DAY1, "2026-11-24"), (DAY3, "2026-11-26")]
+    for day, shown in expected:
+        assert preview_ranking(client, LATE)[0] == shown  # the preview is what the next tick publishes
+        edition = close_due_edition(session, LATE)
+        assert (edition.edition_date, edition.participants) == (day, 1)
+        rows = session.scalars(select(EditionTopic).where(EditionTopic.edition_id == edition.id)).all()
+        assert [(r.topic_id, r.approvals) for r in rows] == [(t.id, 1)]
+    assert close_due_edition(session, LATE) is None
+    assert [e.edition_date for e in editions(session)] == [date(2026, 11, 23), DAY1, DAY3]
+
+
+def test_unes_on_every_day_are_published_one_per_tick(session, media):
+    stopped_worker(session, media, [DAY1, DAY2, DAY3])
+    published = [close_due_edition(session, LATE).edition_date for _ in range(3)]
+    assert published == [DAY1, DAY2, DAY3] and close_due_edition(session, LATE) is None

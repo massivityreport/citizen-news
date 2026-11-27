@@ -10,7 +10,7 @@ Contrat des routes de Citizen News V2 : chaque citoyen compose sa une de 10 suje
 - **Compteurs d'approbation** : jamais dans une réponse destinée à un citoyen avant la publication (ni bassin, ni `/me/une`, ni erreur). Ils apparaissent dans l'édition publiée et dans le backoffice.
 - **Remplacement net de V1** (décision de l'humain) : plus de vote, de halving, de `support`/`reason`, de `/api/topics/front`, `/api/vote/next`, `/api/votes*`, `/api/halving/config`. La migration 0009 a supprimé ces données.
 
-**État d'implémentation** — implémenté : `GET /api/health`, les éditions publiées (`GET /api/edition/current`, `/api/editions*`), l'agrégation et la clôture (worker), l'authentification avec brouillon, le bassin (`GET /api/topics/pool`), la une personnelle (`/api/me/une*`), le calendrier d'édition, le backoffice sources et articles, `GET /api/admin/topics` (+ détail) et `GET /api/admin/stats` dans leur forme réduite décrite plus bas, la `TopicCard` V2. **Cible, à venir** (tâche suivante) : aperçu et listes d'éditions admin, `approvals`/participants admin. Les sections ci-dessous marquées « (implémenté) » le sont ; les autres décrivent la cible.
+**État d'implémentation** — implémenté : `GET /api/health`, les éditions publiées (`GET /api/edition/current`, `/api/editions*`), l'agrégation et la clôture (worker), l'authentification avec brouillon, le bassin (`GET /api/topics/pool`), la une personnelle (`/api/me/une*`), le calendrier d'édition, le backoffice sources et articles, `GET /api/admin/topics` (+ détail) et `GET /api/admin/stats` dans leur forme réduite décrite plus bas, la `TopicCard` V2. Implémenté aussi : l'aperçu de l'édition, les listes d'éditions admin, `approvals`/participants admin. Les sections ci-dessous marquées « (implémenté) » le sont ; les autres décrivent la cible.
 
 ## Types communs
 
@@ -82,7 +82,7 @@ Corps commun (« une ») : `{ "edition_date": "2026-11-27", "closes_at": "2026-1
 
 Toute écriture : `409 {"detail": "La clôture est passée, la une du jour n'est plus modifiable"}` si `open` est faux. `open` est faux dès l'heure de clôture, même si le worker est en retard ; il redevient vrai (pour l'édition suivante, une vide) quand l'édition du jour est publiée.
 
-**Édition ciblée en cas de retard.** `edition_state` cible la plus ancienne clôture **due non publiée** tant qu'elle existe : `open: false`, ses unes enregistrées restent lisibles (`GET /api/me/une`) et aucune écriture n'est possible, même si le retard dépasse minuit ou dure plusieurs jours ; l'édition suivante s'ouvre une fois celle-ci publiée. Une date due n'est « en attente » que s'il existe déjà une édition publiée plus ancienne (tous les jours après la dernière édition publiée, dont la clôture est passée) ou, avant toute édition, si des unes sont enregistrées pour cette date (pas d'édition fantôme au premier lancement : sans cela on cible la prochaine clôture, comme aujourd'hui). `services/edition_calendar.pending_editions(session, now)` expose ces dates dues non publiées (la plus ancienne d'abord) pour `close_due_edition`.
+**Édition ciblée : une seule règle, `target_edition(session, now)`** (`services/edition_calendar.py`), utilisée par `edition_state`, l'aperçu admin, les `approvals` de `/api/admin/topics` **et** `close_due_edition`. Parmi les dates **en attente** (clôture passée, non publiées), elle vaut **la plus ancienne qui a des unes enregistrées** ; sinon **la plus récente** (édition vide, **pas d'édition fantôme** pour les jours manqués entre-temps). Un jour échu avec des unes n'est **jamais sauté** : la clôture publie la cible, puis le calendrier s'appuie sur la dernière édition publiée (les dates intermédiaires sans unes qui la précèdent ne sont plus en attente), et la cible suivante est publiée au tick d'après (une édition par minute jusqu'au rattrapage). Tant qu'une cible existe : `open: false`, ses unes enregistrées restent lisibles (`GET /api/me/une`) et aucune écriture n'est possible, même si le retard dépasse minuit ou dure plusieurs jours ; l'édition suivante s'ouvre une fois la dernière due publiée. Une date due n'est « en attente » que s'il existe déjà une édition publiée plus ancienne (tous les jours après la dernière édition publiée, dont la clôture est passée) ou, avant toute édition, si des unes sont enregistrées pour cette date (pas d'édition fantôme au premier lancement). `pending_editions(session, now)` expose ces dates (la plus ancienne d'abord) ; l'aperçu admin est donc toujours l'édition que le prochain tick publiera.
 
 **Clôture et sujets hors bassin.** `PUT /api/me/une` accepte des sujets existants hors bassin, mais la clôture ne compte que les sujets qui passent `eligible_pool` **au moment de la clôture** : les autres restent dans la une du citoyen sans rien totaliser. Les articles datés de plus d'1 h dans le futur sont ignorés pour la fenêtre du bassin. Limitation de débit sur les écritures (par compte, `429` avec `Retry-After` ; `RATE_LIMIT_UNE_WRITES_PER_ACCOUNT` par `RATE_LIMIT_UNE_WINDOW_SECONDS`, 60 par minute par défaut ; la lecture n'est pas limitée). Les écritures d'un même compte sont sérialisées (verrou sur le compte) : la limite de 10 ne peut pas être dépassée par des requêtes simultanées. Réponses `Cache-Control: no-store`. Les identifiants de `topic_ids` sont des entiers positifs (`422` sinon).
 
@@ -111,9 +111,9 @@ Capture **figée** (titre, résumé, sources, nombre de médias… copiés à la
 
 `aggregate(session, edition_date, now, *, top=10, extra=10)` (`app/services/aggregation.py`) n'écrit rien et rend un `Aggregation` (dataclasses) : `participants`, `ranking` (tous les sujets de score ≥ 1, `RankedTopic` : `rank`, `topic_id`, `score`, `proportion` = score / participants, données de publication captées — titre, résumé, sources, `source_count`, `article_count`, `image_url`, `updated_at` —, `tied_with`, `broken_by`), `topics` (rangs 1–`top`), `next` (rangs suivants, `extra`) et `ties` (`TieGroup` : `approvals`, `topic_ids`, `broken_by`, `crosses_cut`). `broken_by` d'un groupe d'égalité = le critère le plus profond nécessaire pour ordonner tout le groupe (`source_count` < `updated_at` < `id`) ; `crosses_cut` = le groupe a des sujets dans la une et hors de la une (coupure 10/11). Nombre de requêtes constant (participants, bassin, scores, sujets, cartes). Les participants sont les comptes ayant au moins un sujet dans leur une du jour, sujets hors bassin compris.
 
-**Clôture** — `close_due_edition(session, now)`, appelée par le worker (`python -m app.cli run`, vérification **chaque minute**, tick séparé de l'ingestion de 15 min) : au premier passage après l'heure locale de clôture, s'il n'existe pas d'édition pour `edition_date`, agrège et publie. Idempotente et atomique (une transaction ; verrou advisory ou contrainte unique sur `editions.edition_date` : deux workers simultanés → une seule édition). Rattrape un retard (worker arrêté des heures ou des jours : publie l'édition du jour dû, une seule, la plus récente due, pas d'éditions fantômes). Horloge injectable (`now`) ; tests à l'heure d'été (17:00 locale = 15:00 UTC l'été, 16:00 UTC l'hiver).
+**Clôture** — `close_due_edition(session, now)`, appelée par le worker (`python -m app.cli run`, vérification **chaque minute**, tick séparé de l'ingestion de 15 min) : au premier passage après l'heure locale de clôture, s'il n'existe pas d'édition pour `edition_date`, agrège et publie. Idempotente et atomique (une transaction ; verrou advisory ou contrainte unique sur `editions.edition_date` : deux workers simultanés → une seule édition). Rattrape un retard (worker arrêté des heures ou des jours : publie `target_edition`, voir « Édition ciblée » : chaque jour échu avec des unes est publié à son tour, un par tick ; les jours échus sans unes ne donnent pas d'éditions fantômes, seule la plus récente est publiée vide). Horloge injectable (`now`) ; tests à l'heure d'été (17:00 locale = 15:00 UTC l'été, 16:00 UTC l'hiver).
 
-Détails d'implémentation (`app/services/edition_close.py`) : `pending_editions` donne les dates dues ; seule la plus récente est publiée (les jours manqués avant elle ne produisent rien, et le calendrier passe à la suite car il s'appuie sur la dernière édition publiée). Verrou `pg_advisory_xact_lock` puis nouvelle vérification sous verrou ; la contrainte unique `editions.edition_date` est le filet (conflit = pas de seconde édition). L'édition et ses `edition_topics` s'insèrent dans une seule transaction (échec = rien de publié, le tick suivant réessaie). `published_at` = l'horloge `now` du tick. Après publication, l'ingestion peut modifier les sujets : l'édition ne change plus. Course à 17 h : toute écriture de une (`PUT`, `PUT/DELETE topics`, `merge`, fusion du brouillon à la vérification) prend d'abord `pg_advisory_xact_lock_shared` sur la même clé que la clôture (exclusive), puis lit l'état de l'édition, puis verrouille la ligne du compte (ordre fixe, pas d'interblocage). Une écriture en vol fait attendre la clôture, donc elle est comptée ; une écriture qui démarre pendant la clôture attend, voit l'édition publiée et écrit sur le lendemain. Le verrou ne dure que la courte transaction de l'écriture. Participants et scores sont lus dans une seule requête (un seul instantané) : jamais de `proportion` > 1, même pour l'aperçu.
+Détails d'implémentation (`app/services/edition_close.py`) : `target_edition` choisit la date à publier (la plus ancienne échue avec des unes, sinon la plus récente) ; les jours sans unes qui la précèdent ne produisent rien, et le calendrier passe à la suite car il s'appuie sur la dernière édition publiée. Verrou `pg_advisory_xact_lock` puis nouvelle vérification sous verrou ; la contrainte unique `editions.edition_date` est le filet (conflit = pas de seconde édition). L'édition et ses `edition_topics` s'insèrent dans une seule transaction (échec = rien de publié, le tick suivant réessaie). `published_at` = l'horloge `now` du tick. Après publication, l'ingestion peut modifier les sujets : l'édition ne change plus. Course à 17 h : toute écriture de une (`PUT`, `PUT/DELETE topics`, `merge`, fusion du brouillon à la vérification) prend d'abord `pg_advisory_xact_lock_shared` sur la même clé que la clôture (exclusive), puis lit l'état de l'édition, puis verrouille la ligne du compte (ordre fixe, pas d'interblocage). Une écriture en vol fait attendre la clôture, donc elle est comptée ; une écriture qui démarre pendant la clôture attend, voit l'édition publiée et écrit sur le lendemain. Le verrou ne dure que la courte transaction de l'écriture. Participants et scores sont lus dans une seule requête (un seul instantané) : jamais de `proportion` > 1, même pour l'aperçu.
 
 ## Authentification (lien magique) (implémenté, brouillon compris)
 
@@ -207,17 +207,17 @@ Ré-ajouter l'URL d'une source supprimée définitivement est permis ; elle quit
 
 ### Statistiques (`GET /api/admin/stats`)
 
-Page d'accueil du backoffice. Derrière la session admin (`401` sinon, y compris avec une session citoyenne). **Comptes agrégés uniquement** : ni identifiant de compte, ni adresse. Réponse **actuelle** (articles seulement) :
+Page d'accueil du backoffice. Derrière la session admin (`401` sinon, y compris avec une session citoyenne). **Comptes agrégés uniquement** : ni identifiant de compte, ni adresse. Réponse :
 
 ```json
 {
-  "last_24h": {"articles": 12},
-  "total":    {"articles": 1830},
-  "series": [{"date": "2026-10-29", "articles": 7}, …]
+  "last_24h": {"articles": 12, "participants": 8, "selections": 61},
+  "total":    {"articles": 1830, "participants": 120, "selections": 940},
+  "series": [{"date": "2026-10-29", "articles": 7, "participants": 3, "selections": 22}, …]
 }
 ```
 
-**Cible V2** (tâche admin à venir) : `participants` et `unes` (unes enregistrées) s'ajoutent à `last_24h`, `total` et à chaque point de `series`, à la place des votes et votants V1.
+`participants` = comptes distincts ayant au moins une sélection (une une non vide) ; `selections` = lignes de sélection (sujets mis en une). Daté par `selections.created_at` (même fenêtre et mêmes jours UTC que les articles). Plus de `votes` ni de `voters` (V1).
 
 - **Fenêtre « 24 h »** : glissante, `[maintenant − 24 h, maintenant]` (bornes incluses), horloge du serveur (injectable dans les tests).
 - **Articles** : comptés selon la date d'**ingestion** (`articles.fetched_at`, posée à l'insertion, jamais modifiée), pas la date de publication.
@@ -253,13 +253,13 @@ Les filtres se combinent (ET). Item :
 
 #### `GET /api/admin/topics`
 
-Paramètres : `page`, `page_size`, `sort` = `updated` (défaut, `updated_at`) | `title` | `articles` ; `order` (défaut `desc`). Item :
+Paramètres : `page`, `page_size`, `sort` = `approvals` (défaut) | `title` | `articles` | `updated` ; `order` (défaut `desc`). Item :
 
 ```json
-{ "id": 7, "title": "Retraites", "updated_at": "2026-11-26T09:30:00Z", "article_count": 5, "source_count": 3, "image_url": "https://…" }
+{ "id": 7, "title": "Retraites", "article_count": 5, "source_count": 3, "updated_at": "2026-11-26T09:30:00Z", "approvals": 12, "image_url": "https://…" }
 ```
 
-`source_count` : médias distincts. `image_url` : image du plus récent article qui en a une (comme les cartes citoyennes), ou `null`. Agrégats calculés par le SQL de la page (deux requêtes avec le `COUNT`). Plus de `state`, `wave`, `vote_count` ni de filtre `state` (V1). **Cible V2** : un champ `approvals` (approbations de l'édition en cours) s'ajoute avec la tâche admin.
+`source_count` : médias distincts. `image_url` : image du plus récent article qui en a une (comme les cartes citoyennes), ou `null`. Agrégats calculés par le SQL de la page (deux requêtes avec le `COUNT`). Plus de `state`, `wave`, `vote_count` ni de filtre `state` (V1). `approvals` : nombre de comptes ayant le sujet dans leur une de l'**édition en cours** (`edition_state`, y compris une édition échue non encore publiée), 0 sans approbation ; tous les sujets sont listés (pas seulement le bassin). Tri par `approvals` : mêmes règles d'ordre total (`id` en départage).
 
 #### `GET /api/admin/topics/{id}`
 
@@ -271,22 +271,24 @@ Paramètres : `page`, `page_size`, `sort` = `updated` (défaut, `updated_at`) | 
   "first_seen_at": "…", "updated_at": "…",
   "article_count": 5, "source_count": 3,
   "articles": [ { "id": 1, "title": "…", "url": "…", "source": { "id": 3, "name": "…", "active": true }, "published_at": "…|null" } ],
-  "articles_truncated": false
+  "articles_truncated": false,
+  "approvals": 12,
+  "history": [ { "edition_date": "2026-11-26", "rank": 3, "approvals": 40, "proportion": 0.333 } ]
 }
 ```
 
 - **Articles** : du plus récent au plus ancien (`published_at`, sans date en dernier, puis `id`), 200 au plus ; `articles_truncated` signale la coupe (`article_count` reste le vrai nombre).
-- **Cible V2** : `approvals` courant et historique par édition s'ajoutent avec la tâche admin.
+- **`approvals`** : approbations courantes (édition en cours). **`history`** : les éditions **publiées** où le sujet figure ou a été retenu par des comptes, les plus récentes d'abord, 30 au plus ; `rank` est `null` quand il avait des approbations sans entrer dans la une (alors `approvals` et `proportion` viennent des sélections de ce jour, sur les participants figés) ; sinon chiffres figés de l'édition. Calculé en SQL agrégé.
 
-### Éditions (cible V2, tâche admin à venir)
+### Éditions et aperçu (implémenté)
 
 | Route | Réponse |
 |---|---|
-| `GET /api/admin/edition/preview` | `{ "computed_at", "edition_date", "participants", "topics": [ItemAdmin ×≤10], "next": [ItemAdmin rangs 11–20], "ties": [{"approvals": 12, "topic_ids": [3, 9], "broken_by": "source_count\|updated_at\|id", "crosses_cut": true}] }`. Ne publie rien, ne fige rien, n'écrit rien (appelle `aggregate`). |
-| `GET /api/admin/editions` | liste `{date, published_at, participants, topic_count}` |
-| `GET /api/admin/editions/{date}` | édition avec approbations |
+| `GET /api/admin/edition/preview` | `{ "computed_at", "edition_date", "participants", "topics": [ItemAdmin ×≤10], "next": [ItemAdmin rangs 11–20], "ties": [{"approvals": 12, "topic_ids": [3, 9], "broken_by": "source_count\|updated_at\|id", "crosses_cut": true}] }`. Ne publie rien, ne fige rien, n'écrit rien : elle appelle exactement `aggregate` (celle de `close_due_edition`), pour `edition_date` = l'édition ciblée par le calendrier (`edition_state`) à l'heure du serveur ; des tests prouvent le même classement que la clôture, l'absence d'écriture et un nombre constant de requêtes. `proportion` arrondie à 3 décimales. |
+| `GET /api/admin/editions` | `{ "items": [{date, published_at, participants, topic_count}], "total", "page", "page_size" }`, plus récentes d'abord, pagination `page`/`page_size` comme les autres listes. |
+| `GET /api/admin/editions/{date}` | l'édition complète (même forme que `GET /api/editions/{date}` : approbations et proportion) · `404 {"detail": "Édition introuvable."}` · `422` si la date est mal formée. |
 
-`ItemAdmin` : `{ "rank", "topic_id", "title", "approvals", "proportion", "source_count", "article_count", "updated_at", "tied_with": [ids], "broken_by": null | "source_count" | "updated_at" | "id" }`. Jamais d'e-mail dans les réponses admin.
+`ItemAdmin` (`tied_with` : les autres sujets du même score ; `broken_by` : critère le plus profond ayant servi à départager son groupe, `null` s'il est seul) : `{ "rank", "topic_id", "title", "approvals", "proportion", "source_count", "article_count", "updated_at", "tied_with": [ids], "broken_by": null | "source_count" | "updated_at" | "id" }`. Jamais d'e-mail dans les réponses admin.
 
 ## Santé (implémenté)
 
