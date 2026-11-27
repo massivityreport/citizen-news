@@ -211,3 +211,43 @@ class AdminTopicDetail(BaseModel):
     source_count: int
     articles: list[AdminTopicArticle]
     articles_truncated: bool
+
+
+# --- Published editions (public) ---
+
+
+class EditionTopicOut(BaseModel):
+    rank: int
+    topic_id: int | None  # None once the live topic was deleted
+    title: str
+    summary: str
+    sources: list[SourceOut]
+    source_count: int
+    article_count: int
+    approvals: int
+    proportion: float  # approvals / participants, rounded to 3 decimals
+    image_url: str | None
+
+
+class EditionOut(BaseModel):
+    date: date
+    published_at: datetime
+    participants: int
+    topics: list[EditionTopicOut]
+
+
+class CurrentEditionOut(BaseModel):
+    edition: EditionOut | None
+    next_close_at: datetime
+    server_time: datetime
+
+
+class EditionSummary(BaseModel):
+    date: date
+    published_at: datetime
+    participants: int
+    topic_count: int
+
+
+class EditionList(BaseModel):
+    items: list[EditionSummary]
