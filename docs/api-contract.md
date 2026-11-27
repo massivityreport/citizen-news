@@ -235,7 +235,7 @@ Page d'accueil du backoffice. Derrière la session admin (`401` sinon, y compris
 
 ### Articles et sujets (lecture seule)
 
-Routes sous `/api/admin`, toutes derrière la session admin (`401` sinon, y compris avec une session citoyenne). **Aucune réponse ne contient d'adresse e-mail, de hash ni de donnée personnelle** (un test parcourt les réponses et échoue si une adresse y apparaît).
+Routes sous `/api/admin`, toutes derrière la session admin (`401` sinon, y compris avec une session citoyenne). **Aucune réponse ne contient d'adresse e-mail, de hash ni de donnée personnelle, à une exception : les routes `/api/admin/feedback` (section « Avis (admin) »), qui renvoient l'e-mail laissé par le visiteur** (un test parcourt les autres réponses et échoue si une adresse y apparaît).
 
 **Pagination** (`/articles`, `/topics`) : `page` (≥ 1, 100 000 au plus, défaut 1) et `page_size` (1 à 200, défaut 50) ; hors bornes → `422`. Réponse `{"items": […], "total": <n>, "page": <p>, "page_size": <s>}`. Une page au-delà de la dernière répond `200` avec `items: []` et le vrai `total`. Pagination et tri sont faits par le serveur (`LIMIT/OFFSET` + un `COUNT`), jamais en mémoire. Tout paramètre invalide → `422 {"detail": "Requête invalide (champ : …)"}` (ou un message précis pour les dates).
 
@@ -297,7 +297,7 @@ Paramètres : `page`, `page_size`, `sort` = `approvals` (défaut) | `title` | `a
 | `GET /api/admin/editions` | `{ "items": [{date, published_at, participants, topic_count}], "total", "page", "page_size" }`, plus récentes d'abord, pagination `page`/`page_size` comme les autres listes. |
 | `GET /api/admin/editions/{date}` | l'édition complète (même forme que `GET /api/editions/{date}` : approbations et proportion) · `404 {"detail": "Édition introuvable."}` · `422` si la date est mal formée. |
 
-`ItemAdmin` (`tied_with` : les autres sujets du même score ; `broken_by` : critère le plus profond ayant servi à départager son groupe, `null` s'il est seul) : `{ "rank", "topic_id", "title", "approvals", "proportion", "source_count", "article_count", "updated_at", "tied_with": [ids], "broken_by": null | "source_count" | "updated_at" | "id" }`. Jamais d'e-mail dans les réponses admin.
+`ItemAdmin` (`tied_with` : les autres sujets du même score ; `broken_by` : critère le plus profond ayant servi à départager son groupe, `null` s'il est seul) : `{ "rank", "topic_id", "title", "approvals", "proportion", "source_count", "article_count", "updated_at", "tied_with": [ids], "broken_by": null | "source_count" | "updated_at" | "id" }`. Jamais d'e-mail dans les réponses admin hors `/api/admin/feedback`.
 
 ## Santé (implémenté)
 
@@ -305,3 +305,17 @@ Paramètres : `page`, `page_size`, `sort` = `approvals` (défaut) | `title` | `a
 
 - `200` → `{"status": "ok"}` si la base répond.
 - `503` → `{"detail": "Base de données indisponible"}`.
+
+## Avis (admin) — `/api/admin/feedback`
+
+Derrière la session admin (`401` sinon, y compris avec une session citoyenne). **Seules routes admin qui renvoient une adresse e-mail** (celle de l'avis). Les avis sont ceux de `POST /api/feedback`.
+
+| Route | Rôle |
+|---|---|
+| `GET /api/admin/feedback?unread_only=false&page=1&page_size=50` | Liste du plus récent au plus ancien : `{ "items": [Avis], "total", "unread_count", "page", "page_size" }` ; `unread_only=true` ne garde que les non lus (`total` en tient compte, `unread_count` non). `Avis` : `{ "id", "created_at", "kind": "problem"\|"idea"\|"other", "email", "page_name", "page_url", "excerpt" (début du message, 140 caractères au plus), "is_read", "answered" }`. `answered` vaut toujours `false` : il n'y a pas encore de réponses. |
+| `GET /api/admin/feedback/unread-count` | `{ "unread_count" }` : le nombre affiché à côté de l'onglet. |
+| `GET /api/admin/feedback/{id}` | Détail, sans effet de bord : les champs de `Avis` sauf `excerpt`, plus `message` (complet), `screen`, `browser` et `recent_actions` (liste de 20 actions au plus, `null` si le visiteur ne l'a pas jointe). `404` si inconnu. |
+| `POST /api/admin/feedback/{id}/read` · `…/unread` | Marque lu / non lu (idempotent) ; répond avec le détail. Le backoffice appelle `read` quand l'admin ouvre un avis. `404` si inconnu. |
+| `DELETE /api/admin/feedback/{id}` | Suppression définitive (l'avis et son parcours ; les réponses suivront quand leur table existera). `204`, `404` si inconnu. |
+
+Migration `0011` : colonne `feedback.is_read` (faux par défaut) et index sur `created_at`.
