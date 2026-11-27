@@ -6,20 +6,22 @@ session. Later admin features add their routes to `protected`; they need no per-
 
 import logging
 import re
-from datetime import date
+from datetime import date, datetime
 from typing import Annotated, Literal
 from collections.abc import Callable
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Response
 from sqlalchemy.orm import Session
 
 from app.db import get_session
-from app.deps import ADMIN_COOKIE, client_ip, require_admin
+from app.deps import ADMIN_COOKIE, client_ip, clock, require_admin
 from app.schemas import (
-    AdminArticlePage, AdminLoginRequest, AdminSourceCreate, AdminSourceDeleted, AdminSourceOut, AdminStats, AdminTopicDetail,
-    AdminTopicPage,
+    AdminArticlePage, AdminEditionPage, AdminLoginRequest, AdminPreview, AdminSourceCreate, AdminSourceDeleted, AdminSourceOut, AdminStats, AdminTopicDetail,
+    AdminTopicPage, EditionOut,
 )
 from app.services import admin_articles as articles_service
+from app.services import admin_editions as editions_service
+from app.services import editions as published_editions
 from app.services import admin_stats as stats_service
 from app.services import admin_topics as topics_service
 from app.services import admin as service
@@ -83,8 +85,8 @@ def me() -> dict:
 
 
 @protected.get("/stats", response_model=AdminStats)
-def get_stats(db: Session = Depends(get_session)) -> AdminStats:
-    return stats_service.stats(db)
+def get_stats(db: Session = Depends(get_session), now: datetime = Depends(clock)) -> AdminStats:
+    return stats_service.stats(db, now)
 
 
 # --- Sources ---
@@ -206,16 +208,42 @@ def list_articles(
 def list_topics(
     page: PageNumber = 1,
     page_size: PageSize = 50,
-    sort: Literal["title", "articles", "updated"] = "updated",
+    sort: Literal["approvals", "title", "articles", "updated"] = "approvals",
     order: Literal["asc", "desc"] = "desc",
     db: Session = Depends(get_session),
+    now: datetime = Depends(clock),
 ) -> AdminTopicPage:
-    return topics_service.list_topics(db, sort, order, page, page_size)
+    return topics_service.list_topics(db, sort, order, page, page_size, now)
 
 
 @protected.get("/topics/{topic_id}", response_model=AdminTopicDetail)
-def get_topic(topic_id: int, db: Session = Depends(get_session)) -> AdminTopicDetail:
-    detail = topics_service.topic_detail(db, topic_id)
+def get_topic(topic_id: int, db: Session = Depends(get_session), now: datetime = Depends(clock)) -> AdminTopicDetail:
+    detail = topics_service.topic_detail(db, topic_id, now)
     if detail is None:
         raise HTTPException(status_code=404, detail="Sujet introuvable.")
     return detail
+
+
+# --- Editions: preview of the one in progress, published ones ---
+
+
+@protected.get("/edition/preview", response_model=AdminPreview)
+def edition_preview(db: Session = Depends(get_session), now: datetime = Depends(clock)) -> AdminPreview:
+    return editions_service.preview(db, now)
+
+
+@protected.get("/editions", response_model=AdminEditionPage)
+def list_editions(page: PageNumber = 1, page_size: PageSize = 50, db: Session = Depends(get_session)) -> AdminEditionPage:
+    return editions_service.list_editions(db, page, page_size)
+
+
+@protected.get("/editions/{day}", response_model=EditionOut)
+def get_edition(day: Annotated[str, Path(pattern=r"^\d{4}-\d{2}-\d{2}$")], db: Session = Depends(get_session)) -> EditionOut:
+    try:
+        parsed = date.fromisoformat(day)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Requête invalide (champ : day)") from None
+    edition = published_editions.edition_by_date(db, parsed)
+    if edition is None:
+        raise HTTPException(status_code=404, detail="Édition introuvable.")
+    return edition

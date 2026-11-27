@@ -44,10 +44,15 @@ def edition_by_date(session: Session, day: date) -> EditionOut | None:
 
 
 def edition_summaries(session: Session, limit: int) -> list[EditionSummary]:
+    return edition_summaries_page(session, limit, 0)
+
+
+def edition_summaries_page(session: Session, limit: int, offset: int) -> list[EditionSummary]:
     count = select(func.count(EditionTopic.id)).where(EditionTopic.edition_id == Edition.id).correlate(Edition).scalar_subquery()
     rows = session.execute(
         select(Edition.edition_date, Edition.published_at, Edition.participants, count)
         .order_by(Edition.edition_date.desc())
         .limit(limit)
+        .offset(offset)
     )
     return [EditionSummary(date=d, published_at=p, participants=n, topic_count=c) for d, p, n, c in rows]
