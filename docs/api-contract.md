@@ -197,6 +197,72 @@ Ré-ajouter l'URL d'une source supprimée définitivement est permis ; elle quit
 
 **Suppression** : les articles partent en cascade, l'URL est mémorisée dans `deleted_sources` pour que l'initialisation depuis `feeds.yaml` ne recrée pas la source. Un sujet qui perd des articles n'est pas supprimé (ses votes sont conservés) : s'il lui reste moins de médias distincts que le minimum pour la une, ou plus aucun article, il n'apparaît plus sur la une ni dans le flux de vote ; son titre et son résumé ne changent qu'au prochain regroupement qui lui rattache un article : un sujet mixte garde donc, après la suppression, un titre calculé avec l'ancien article.
 
+### Articles, sujets et votes (lecture seule)
+
+Routes sous `/api/admin`, toutes derrière la session admin (`401` sinon, y compris avec une session citoyenne). **Aucune réponse ne contient d'adresse e-mail, de hash ni de donnée personnelle** : un vote est `{date, choix, numéro de compte}`, le numéro étant l'`id` du compte (un test parcourt les réponses et échoue si une adresse y apparaît).
+
+**Pagination** (`/articles`, `/topics`, `/topics/{id}/votes`) : `page` (≥ 1, 100 000 au plus, défaut 1) et `page_size` (1 à 200, défaut 50) ; hors bornes → `422`. Réponse `{"items": […], "total": <n>, "page": <p>, "page_size": <s>}`. Une page au-delà de la dernière répond `200` avec `items: []` et le vrai `total`. Pagination et tri sont faits par le serveur (`LIMIT/OFFSET` + un `COUNT`), jamais en mémoire. Tout paramètre invalide → `422 {"detail": "Requête invalide (champ : …)"}` (ou un message précis pour les dates).
+
+**Tri** : `sort` et `order` (`asc`/`desc`) sont des listes blanches strictes (`422` sinon) ; l'`ORDER BY` vient d'une table fermée du serveur, jamais de l'entrée. Ordre total : l'`id` départage les égalités (même sens que `order`) ; les valeurs absentes (article sans date, sujet sans changement d'état, article non regroupé) viennent **toujours en dernier**, dans les deux sens.
+
+#### `GET /api/admin/articles`
+
+Paramètres : `page`, `page_size`, `sort` = `date` (défaut, `published_at`) | `source` (nom, sans casse) | `topic` (titre du sujet, sans casse) ; `order` (défaut `desc`) ; filtres :
+
+- `topic_id` (entier ≥ 1) : articles de ce sujet ;
+- `source_id` (entier ≥ 1) ;
+- `date_from`, `date_to` : `AAAA-MM-JJ` strict (une date-heure est refusée), entre 2000 et 2100, `date_from` ≤ `date_to`, sinon `422`. Filtre sur **`published_at`**, en **UTC** : `date_from` inclus (00:00 UTC), `date_to` inclus **jour entier** (jusqu'au lendemain 00:00 UTC exclu). Un article sans date de publication est exclu dès qu'une borne est donnée (il apparaît sans filtre de date, en dernier du tri par date) ;
+- `ungrouped=true` : `topic_id IS NULL` (`false` = pas de filtre). **Incompatible avec `topic_id` → `422`** `« ungrouped » et « topic_id » s'excluent`.
+
+Les filtres se combinent (ET). Item :
+
+```json
+{ "id": 12, "title": "…", "url": "https://…", "published_at": "2026-11-03T10:00:00Z", "fetched_at": "2026-11-03T10:05:00Z",
+  "source": { "id": 3, "name": "Le Monde", "active": true },
+  "topic": { "id": 7, "title": "Retraites" }, "grouped": true }
+```
+
+`topic: null` et `grouped: false` pour un article non regroupé. Une source désactivée reste listée (`source.active: false`). Deux requêtes SQL quelle que soit la taille de page (la page avec ses jointures sur la source et le sujet, et un `COUNT`).
+
+#### `GET /api/admin/topics`
+
+Paramètres : `page`, `page_size`, `sort` = `votes` (défaut) | `title` | `state` (ordre du cycle de vie : new, active, emerged, reserve) | `articles` | `state_changed` ; `order` (défaut `desc`) ; filtre `state` = `new` | `active` | `reserve` | `emerged`. Item :
+
+```json
+{ "id": 7, "title": "Retraites", "state": "active", "wave": 1, "state_changed_at": "2026-11-20T09:30:00Z",
+  "article_count": 5, "source_count": 3, "vote_count": 41, "image_url": "https://…" }
+```
+
+`source_count` : médias distincts. `image_url` : image du plus récent article qui en a une (comme les cartes citoyennes), ou `null`. Agrégats calculés par le SQL de la page (deux requêtes avec le `COUNT`).
+
+#### `GET /api/admin/topics/{id}`
+
+`404 {"detail": "Sujet introuvable."}` si inconnu. Sinon :
+
+```json
+{
+  "id": 7, "title": "…", "summary": "…", "state": "emerged", "wave": 3,
+  "first_seen_at": "…", "updated_at": "…", "state_changed_at": "…|null", "evaluated_at": "…|null",
+  "article_count": 5, "source_count": 3,
+  "support": { "score": 0.61, "level": "high", "votes_count": 40 },
+  "front": { "on_front": true, "reason": { "code": "strong_mobilisation", "label": "Forte mobilisation" } },
+  "votes": { "more": 30, "not_priority": 6, "unknown": 4, "total": 40, "voters": 40, "first_vote_at": "…|null",
+             "daily": [ { "date": "2026-11-24", "more": 10, "not_priority": 2, "unknown": 0, "total": 12 } ] },
+  "articles": [ { "id": 1, "title": "…", "url": "…", "source": { "id": 3, "name": "…", "active": true }, "published_at": "…|null" } ],
+  "articles_truncated": false
+}
+```
+
+- **Historique** : le modèle ne garde **que le dernier changement d'état** (`state_changed_at`) et la dernière évaluation de vague (`evaluated_at`) ; il n'y a pas d'historique des états, et l'API n'en invente pas.
+- **Soutien** : `score` = borne basse de Wilson de la part de « more » parmi les opinions (`more` + `not_priority`), `level` = `low`/`medium`/`high` : les fonctions de `services/support.py` et `halving.py`, pas une copie. `votes_count` compte aussi « unknown ».
+- **À la une** : `front.on_front` vaut `true` quand le sujet **remplit les conditions pour figurer sur la une** (même fonction `front_entry` que la page d'accueil : fenêtre d'activité, hors réserve, nombre de médias, votes ou fraîcheur, raison), **sans tenir compte du nombre d'emplacements affichés** (`limit`). `reason` est alors la raison affichée aux citoyens ; `null` (et `on_front: false`) sinon, même si les votes mériteraient une raison.
+- **Votes** : totaux par choix, `voters` = comptes distincts. `daily` : votes **par jour UTC** (`date_trunc('day')` en UTC, agrégé en SQL), une entrée par jour, séries `more`/`not_priority`/`unknown` et `total`, sur les **30 derniers jours** (aujourd'hui compris) ou **depuis le jour du premier vote** si c'est plus court ; les jours sans vote valent 0 ; `[]` sans aucun vote. Les totaux, eux, portent sur tous les votes.
+- **Articles** : du plus récent au plus ancien (`published_at`, sans date en dernier, puis `id`), 200 au plus ; `articles_truncated` signale la coupe (`article_count` reste le vrai nombre).
+
+#### `GET /api/admin/topics/{id}/votes`
+
+`page`, `page_size`. `404` si le sujet est inconnu. Trié par date décroissante (puis `id` du vote décroissant : ordre stable). Item : `{"date": "2026-11-26T10:00:00Z", "choice": "more|not_priority|unknown", "account_id": 42}`.
+
 ## Halving
 
 ### `GET /api/halving/config` — public
