@@ -377,3 +377,44 @@ class AdminPreview(BaseModel):
     topics: list[AdminItem]
     next: list[AdminItem]
     ties: list[AdminTie]
+
+
+class AdminFeedbackItem(BaseModel):
+    """One row of the opinions list. `answered` stays false until replies exist."""
+
+    id: int
+    created_at: datetime
+    kind: Literal["problem", "idea", "other"]
+    email: str
+    page_name: str
+    page_url: str
+    excerpt: str
+    is_read: bool
+    answered: bool = False
+
+
+class AdminFeedbackPage(BaseModel):
+    items: list[AdminFeedbackItem]
+    total: int
+    unread_count: int
+    page: int
+    page_size: int
+
+
+class AdminFeedbackDetail(BaseModel):
+    id: int
+    created_at: datetime
+    kind: Literal["problem", "idea", "other"]
+    email: str
+    message: str
+    page_name: str
+    page_url: str
+    screen: str
+    browser: str
+    recent_actions: list[dict] | None
+    is_read: bool
+    answered: bool = False
+
+
+class AdminUnreadCount(BaseModel):
+    unread_count: int

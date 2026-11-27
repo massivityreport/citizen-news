@@ -16,11 +16,12 @@ from sqlalchemy.orm import Session
 from app.db import get_session
 from app.deps import ADMIN_COOKIE, client_ip, clock, require_admin
 from app.schemas import (
-    AdminArticlePage, AdminEditionPage, AdminLoginRequest, AdminPreview, AdminSourceCreate, AdminSourceDeleted, AdminSourceOut, AdminStats, AdminTopicDetail,
+    AdminArticlePage, AdminEditionPage, AdminFeedbackDetail, AdminFeedbackPage, AdminUnreadCount, AdminLoginRequest, AdminPreview, AdminSourceCreate, AdminSourceDeleted, AdminSourceOut, AdminStats, AdminTopicDetail,
     AdminTopicPage, EditionOut,
 )
 from app.services import admin_articles as articles_service
 from app.services import admin_editions as editions_service
+from app.services import admin_feedback as feedback_service
 from app.services import editions as published_editions
 from app.services import admin_stats as stats_service
 from app.services import admin_topics as topics_service
@@ -247,3 +248,46 @@ def get_edition(day: Annotated[str, Path(pattern=r"^\d{4}-\d{2}-\d{2}$")], db: S
     if edition is None:
         raise HTTPException(status_code=404, detail="Édition introuvable.")
     return edition
+
+
+# --- Opinions sent from the public site (the only place where the back office shows email addresses) ---
+
+
+def _feedback_or_404(found):
+    if found is None:
+        raise HTTPException(status_code=404, detail="Avis introuvable.")
+    return found
+
+
+@protected.get("/feedback", response_model=AdminFeedbackPage)
+def list_feedback(
+    unread_only: bool = False, page: PageNumber = 1, page_size: PageSize = 50, db: Session = Depends(get_session),
+) -> AdminFeedbackPage:
+    return feedback_service.list_feedback(db, unread_only, page, page_size)
+
+
+@protected.get("/feedback/unread-count", response_model=AdminUnreadCount)
+def feedback_unread_count(db: Session = Depends(get_session)) -> AdminUnreadCount:
+    return AdminUnreadCount(unread_count=feedback_service.unread_count(db))
+
+
+@protected.get("/feedback/{feedback_id}", response_model=AdminFeedbackDetail)
+def get_feedback(feedback_id: int, db: Session = Depends(get_session)) -> AdminFeedbackDetail:
+    """Read only: opening it in the back office marks it read through `POST .../read`."""
+    return _feedback_or_404(feedback_service.get_feedback(db, feedback_id))
+
+
+@protected.post("/feedback/{feedback_id}/read", response_model=AdminFeedbackDetail)
+def mark_feedback_read(feedback_id: int, db: Session = Depends(get_session)) -> AdminFeedbackDetail:
+    return _feedback_or_404(feedback_service.set_read(db, feedback_id, True))
+
+
+@protected.post("/feedback/{feedback_id}/unread", response_model=AdminFeedbackDetail)
+def mark_feedback_unread(feedback_id: int, db: Session = Depends(get_session)) -> AdminFeedbackDetail:
+    return _feedback_or_404(feedback_service.set_read(db, feedback_id, False))
+
+
+@protected.delete("/feedback/{feedback_id}", status_code=204)
+def delete_feedback(feedback_id: int, db: Session = Depends(get_session)) -> Response:
+    _feedback_or_404(feedback_service.delete_feedback(db, feedback_id) or None)
+    return Response(status_code=204)

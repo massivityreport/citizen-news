@@ -15,6 +15,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    false,
     func,
     true,
 )
@@ -183,10 +184,14 @@ class AdminSession(Base):
 
 class Feedback(Base):
     """Opinion sent from the public site. `email` is the session's address when logged in, else the typed one.
-    `recent_actions`: the visitor's last 20 actions (JSON list), NULL when the box was left unticked."""
+    `recent_actions`: the visitor's last 20 actions (JSON list), NULL when the box was left unticked.
+    `is_read`: the admin opened it (and did not mark it unread again)."""
 
     __tablename__ = "feedback"
-    __table_args__ = (CheckConstraint("kind IN ('problem', 'idea', 'other')", name="kind"),)
+    __table_args__ = (
+        CheckConstraint("kind IN ('problem', 'idea', 'other')", name="kind"),
+        Index("ix_feedback_created_at", "created_at"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     created_at: Mapped[datetime] = _now()
@@ -198,3 +203,4 @@ class Feedback(Base):
     screen: Mapped[str] = mapped_column(String(20))
     browser: Mapped[str] = mapped_column(String(300))
     recent_actions: Mapped[list | None] = mapped_column(JSON)
+    is_read: Mapped[bool] = mapped_column(Boolean, server_default=false())
