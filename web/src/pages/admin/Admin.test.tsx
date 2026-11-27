@@ -38,6 +38,7 @@ describe("/admin", () => {
       "GET /api/admin/me": () => (session ? me200() : me401()),
       "POST /api/admin/login": () => ((session = true), res(200, { authenticated: true })),
       "POST /api/admin/logout": () => ((session = false), res(204)),
+      "GET /api/admin/sources": () => res(200, []),
     });
     renderApp("/admin");
     await typeAndSubmit("le-bon");
@@ -53,7 +54,7 @@ describe("/admin", () => {
 
     const user = userEvent.setup();
     await user.click(screen.getByRole("link", { name: "Sources" }));
-    expect(await screen.findByText(/bientôt disponible/i)).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "Sources" })).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Déconnexion" }));
     expect(await screen.findByLabelText("Mot de passe")).toBeInTheDocument();

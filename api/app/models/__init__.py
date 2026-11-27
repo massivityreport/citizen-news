@@ -4,10 +4,11 @@ from app.models.entities import (
     AdminSession,
     AuthSession,
     Article,
+    DeletedSource,
     LoginToken,
     MediaSource,
     Topic,
     Vote,
 )
 
-__all__ = ["Base", "Account", "AdminSession", "AuthSession", "Article", "LoginToken", "MediaSource", "Topic", "Vote"]
+__all__ = ["Base", "Account", "AdminSession", "AuthSession", "Article", "DeletedSource", "LoginToken", "MediaSource", "Topic", "Vote"]

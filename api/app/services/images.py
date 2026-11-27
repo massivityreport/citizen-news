@@ -20,7 +20,7 @@ def _has_forbidden_char(text: str) -> bool:
     )
 
 
-def _public_host(host: str) -> str | None:
+def public_host(host: str) -> str | None:
     """The host as stored (lowercase; IDN converted to punycode), or None when it is not a plain public
     DNS name or public IP literal. Local and private targets are refused: the reader's browser would
     request them on the reader's own network."""
@@ -29,7 +29,7 @@ def _public_host(host: str) -> str | None:
             ip = ipaddress.ip_address(host)
         except ValueError:
             return None
-        return host if _is_public_ip(ip) else None
+        return host if is_public_ip(ip) else None
     try:
         host = host.encode("idna").decode("ascii") if not host.isascii() else host
     except UnicodeError:
@@ -46,13 +46,42 @@ def _public_host(host: str) -> str | None:
             ip = ipaddress.ip_address(host)
         except ValueError:
             return None
-        return host if _is_public_ip(ip) else None
+        return host if is_public_ip(ip) else None
     return host
 
 
-def _is_public_ip(ip) -> bool:
-    if getattr(ip, "ipv4_mapped", None) is not None:
-        ip = ip.ipv4_mapped
+_NAT64 = ipaddress.ip_network("64:ff9b::/96")
+_NAT64_LOCAL_USE = ipaddress.ip_network("64:ff9b:1::/48")
+_SIIT = ipaddress.ip_network("::ffff:0:0:0/96")
+_IPV4_COMPATIBLE = ipaddress.ip_network("::/96")
+_SITE_LOCAL = ipaddress.ip_network("fec0::/10")
+_SIXTOFOUR = ipaddress.ip_network("2002::/16")
+_IETF_PROTOCOL = ipaddress.ip_network("192.0.0.0/24")  # includes 192.0.0.9 and 192.0.0.10, which is_global accepts
+
+
+def _embedded_ipv4(ip: ipaddress.IPv6Address) -> ipaddress.IPv4Address | None:
+    """The IPv4 address an IPv6 one carries (mapped, NAT64, SIIT, IPv4-compatible, 6to4), or None."""
+    if ip.ipv4_mapped is not None:
+        return ip.ipv4_mapped
+    if ip in _NAT64 or ip in _SIIT or ip in _IPV4_COMPATIBLE:
+        return ipaddress.IPv4Address(int(ip) & 0xFFFFFFFF)
+    if ip in _SIXTOFOUR:
+        return ipaddress.IPv4Address((int(ip) >> 80) & 0xFFFFFFFF)
+    return None
+
+
+def is_public_ip(ip) -> bool:
+    """Whether a request to `ip` would leave for the public Internet. An IPv6 address that wraps an IPv4 one
+    (a NAT64 gateway or a SIIT translator turns it back into that IPv4) is judged as the IPv4 it wraps.
+    Python 3.12 says is_global for several of those and for fec0::/10, so they are refused here."""
+    if ip.version == 6:
+        embedded = _embedded_ipv4(ip)
+        if embedded is not None:
+            return is_public_ip(embedded)
+        if ip in _NAT64_LOCAL_USE or ip in _SITE_LOCAL:
+            return False
+    elif ip in _IETF_PROTOCOL:
+        return False
     return ip.is_global and not ip.is_multicast
 
 
@@ -80,7 +109,7 @@ def validate_image_url(raw: object, base: str | None = None) -> str | None:
         port = parts.port  # raises ValueError on a malformed or out-of-range port
         if port == 0:
             return None
-        host = _public_host(parts.hostname)
+        host = public_host(parts.hostname)
         if host is None:
             return None
         netloc = f"[{host}]" if ":" in host else host

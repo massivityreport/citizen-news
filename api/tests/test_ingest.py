@@ -10,6 +10,7 @@ from app.services.images import validate_image_url
 from app.services.ingest import ingest, parse_feed
 from app.services.text import clean_html, truncate
 from config.feeds import FeedConfig
+from tests.helpers import original_url
 
 FIXTURES = Path(__file__).parent / "fixtures"
 ALPHA = FeedConfig(name="Alpha", feed_url="https://alpha.example/rss")
@@ -25,7 +26,7 @@ def make_client(routes: dict[str, bytes | int] | None = None) -> httpx.Client:
     }
 
     def handler(request: httpx.Request) -> httpx.Response:
-        body = routes.get(str(request.url), 404)
+        body = routes.get(original_url(request), 404)
         if isinstance(body, int):
             return httpx.Response(body)
         return httpx.Response(200, content=body)
@@ -75,10 +76,11 @@ def test_ingest_is_idempotent(session):
     assert session.scalar(select(func.count()).select_from(MediaSource)) == 2
 
 
-def test_renamed_source_is_updated_not_duplicated(session):
+def test_renamed_in_yaml_does_not_rename_the_source(session):
+    # the database is the reference: feeds.yaml never overwrites a name an admin may have chosen
     ingest(session, [ALPHA], client=make_client())
     ingest(session, [FeedConfig(name="Alpha Info", feed_url=ALPHA.feed_url)], client=make_client())
-    assert [s.name for s in session.scalars(select(MediaSource))] == ["Alpha Info"]
+    assert [s.name for s in session.scalars(select(MediaSource))] == ["Alpha"]
 
 
 def test_failing_feeds_do_not_stop_the_others(session):
@@ -278,3 +280,175 @@ def test_ingest_backfill_leaves_topic_assignment_untouched(session):
     assert article.image_url == "https://cdn.example/new.jpg"
     assert article.topic_id == topic_id and article.published_at == published
     assert session.get(Topic, topic_id).updated_at == updated_at
+
+
+# --- the database is the reference (feeds.yaml only seeds it) ---
+
+def _fetched_urls(client_log: list[str]):
+    def handler(request: httpx.Request) -> httpx.Response:
+        client_log.append(original_url(request))
+        return httpx.Response(200, content=(FIXTURES / "feed_alpha.xml").read_bytes())
+
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+def test_sync_sources_only_adds_missing_sources(session):
+    from app.services.ingest import sync_sources
+
+    assert sync_sources(session, [ALPHA, BETA]) == 2
+    assert sync_sources(session, [ALPHA, BETA]) == 0
+    assert sync_sources(session, [ALPHA, BETA, BROKEN]) == 1
+    assert session.scalar(select(func.count()).select_from(MediaSource)) == 3
+
+
+def test_sync_sources_never_reactivates(session):
+    from app.services.ingest import sync_sources
+
+    sync_sources(session, [ALPHA])
+    session.execute(MediaSource.__table__.update().values(active=False))
+    sync_sources(session, [ALPHA])
+    assert session.scalars(select(MediaSource.active)).all() == [False]
+
+
+def test_sync_sources_does_not_recreate_a_deleted_source(session):
+    from app.models.entities import DeletedSource
+    from app.services.ingest import sync_sources
+
+    session.add(DeletedSource(feed_url=ALPHA.feed_url))
+    session.flush()
+    assert sync_sources(session, [ALPHA, BETA]) == 1
+    assert session.scalars(select(MediaSource.feed_url)).all() == [BETA.feed_url]
+
+
+def test_new_sources_are_active_by_default(session):
+    ingest(session, [ALPHA], client=make_client())
+    assert session.scalars(select(MediaSource.active)).all() == [True]
+
+
+def test_ingest_skips_inactive_sources_but_keeps_their_articles(session):
+    ingest(session, [ALPHA, BETA], client=make_client())
+    beta = session.scalars(select(MediaSource).where(MediaSource.feed_url == BETA.feed_url)).one()
+    beta.active = False
+    session.commit()
+    fetched: list[str] = []
+    report = ingest(session, [ALPHA, BETA], client=_fetched_urls(fetched))
+    assert fetched == [ALPHA.feed_url]
+    assert [f.name for f in report.feeds] == ["Alpha"]
+    assert session.scalar(select(func.count()).select_from(Article).where(Article.source_id == beta.id)) == 2
+
+
+def test_ingest_fetches_sources_added_in_the_database(session):
+    session.add(MediaSource(name="Ajoutée", feed_url="https://added.example/rss"))
+    session.commit()
+    fetched: list[str] = []
+    ingest(session, [], client=_fetched_urls(fetched))
+    assert fetched == ["https://added.example/rss"]
+
+
+# --- the periodic ingestion goes through the same SSRF guard as the admin form ---
+
+def _redirecting_client(location: str):
+    feed = (FIXTURES / "feed_beta.xml").read_bytes()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if original_url(request) == ALPHA.feed_url:
+            return httpx.Response(302, headers={"Location": location})
+        return httpx.Response(200, content=feed)
+
+    return httpx.Client(transport=httpx.MockTransport(handler)), []
+
+
+@pytest.mark.parametrize("location", ["http://127.0.0.1/secret", "http://169.254.169.254/latest/meta-data/", "http://[64:ff9b::7f00:1]/"])
+def test_source_redirecting_to_a_private_address_is_not_ingested(session, location):
+    client, _ = _redirecting_client(location)
+    seen: list[str] = []
+    inner = client._transport.handle_request
+    client._transport.handle_request = lambda r: (seen.append(original_url(r)), inner(r))[1]
+    report = ingest(session, [ALPHA, BETA], client=client)
+    assert [f.name for f in report.failed] == ["Alpha"]  # isolated: Beta is still ingested
+    assert report.new_articles == 2 and all("127.0.0.1" not in u and "169.254" not in u for u in seen)
+    assert seen == [ALPHA.feed_url, BETA.feed_url]
+
+
+def test_source_whose_name_resolves_to_a_private_address_is_not_fetched(session):
+    seen: list[str] = []
+
+    def resolver(host, port):
+        return ["10.0.0.9"] if host == "alpha.example" else ["93.184.216.34"]
+
+    client = httpx.Client(transport=httpx.MockTransport(lambda r: (seen.append(original_url(r)), httpx.Response(200, content=(FIXTURES / "feed_beta.xml").read_bytes()))[1]))
+    report = ingest(session, [ALPHA, BETA], client=client, resolver=resolver)
+    assert [f.name for f in report.failed] == ["Alpha"] and seen == [BETA.feed_url]
+    assert report.new_articles == 2
+
+
+def test_feed_of_the_yaml_is_guarded_too(session):
+    internal = FeedConfig(name="Interne", feed_url="http://localhost:8000/api/admin/me")
+    seen: list[str] = []
+    client = httpx.Client(transport=httpx.MockTransport(lambda r: (seen.append(original_url(r)), httpx.Response(200))[1]))
+    report = ingest(session, [internal], client=client)
+    assert [f.name for f in report.failed] == ["Interne"] and seen == []
+
+
+# --- seeding: race with a deletion, URL normal form ---
+
+def test_sync_sources_and_delete_are_serialised_by_an_advisory_lock(session):
+    """delete_source holds the registry lock until it commits; a seeding started meanwhile waits for it, then
+    sees the new deleted_sources row (one statement, one snapshot taken after the lock)."""
+    import threading
+    import time
+
+    from sqlalchemy.orm import Session
+
+    from app.db import get_engine
+    from app.services.ingest import sync_sources
+
+    sync = Session(get_engine())
+    sync_sources_ = sync_sources
+    sync_sources_(session, [ALPHA])
+    session.commit()
+    source_id = session.scalar(select(MediaSource.id))
+    out: dict = {}
+
+    with Session(get_engine()) as deleter:
+        # the deletion starts first and keeps its transaction open
+        from app.services.ingest import lock_sources
+
+        lock_sources(deleter)
+        deleter.execute(MediaSource.__table__.delete().where(MediaSource.id == source_id))
+        from app.models.entities import DeletedSource
+
+        deleter.add(DeletedSource(feed_url=ALPHA.feed_url))
+        deleter.flush()
+        thread = threading.Thread(target=lambda: out.update(added=sync_sources_(sync, [ALPHA]), _=sync.commit()))
+        thread.start()
+        time.sleep(0.5)
+        assert thread.is_alive()  # waiting for the lock
+        deleter.commit()
+        thread.join(5)
+    sync.close()
+    assert out["added"] == 0
+    session.expire_all()
+    assert session.scalar(select(func.count()).select_from(MediaSource)) == 0
+
+
+@pytest.mark.parametrize("variant", ["https://ALPHA.example/rss", "HTTPS://Alpha.Example/rss#top"])
+def test_url_variants_are_the_same_source(session, variant):
+    from app.models.entities import DeletedSource
+    from app.services.ingest import sync_sources
+
+    assert sync_sources(session, [ALPHA]) == 1
+    assert sync_sources(session, [FeedConfig(name="Alpha bis", feed_url=variant)]) == 0  # no duplicate
+    assert session.scalar(select(func.count()).select_from(MediaSource)) == 1
+    session.execute(MediaSource.__table__.delete())
+    session.add(DeletedSource(feed_url=ALPHA.feed_url))
+    session.flush()
+    assert sync_sources(session, [FeedConfig(name="Alpha bis", feed_url=variant)]) == 0  # no re-creation
+    assert session.scalar(select(func.count()).select_from(MediaSource)) == 0
+
+
+def test_seeded_urls_are_stored_normalized(session):
+    from app.services.ingest import sync_sources
+
+    sync_sources(session, [FeedConfig(name="Casse", feed_url="HTTPS://Casse.Example/Rss?A=1#frag")])
+    assert session.scalars(select(MediaSource.feed_url)).all() == ["https://casse.example/Rss?A=1"]

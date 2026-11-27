@@ -43,3 +43,34 @@ export function useAdminLogout() {
     onSettled: () => endAdminSession(qc), // les données admin ne survivent pas à la session
   });
 }
+
+export const adminSourcesKey = ["admin", "sources"] as const;
+
+export function useAdminSources() {
+  return useQuery({ queryKey: adminSourcesKey, queryFn: api.adminSources });
+}
+
+export function useAddSource() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.adminAddSource,
+    onSuccess: () => qc.invalidateQueries({ queryKey: adminSourcesKey }),
+  });
+}
+
+export function useSetSourceActive() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, active }: { id: number; active: boolean }) => api.adminSetSourceActive(id, active),
+    onSettled: () => qc.invalidateQueries({ queryKey: adminSourcesKey }),
+  });
+}
+
+export function useDeleteSource() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, confirm }: { id: number; confirm: number }) => api.adminDeleteSource(id, confirm),
+    // même en cas de refus (nombre d’articles changé) : on recharge la liste pour afficher le vrai nombre
+    onSettled: () => qc.invalidateQueries({ queryKey: adminSourcesKey }),
+  });
+}

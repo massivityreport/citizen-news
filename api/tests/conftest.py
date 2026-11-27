@@ -45,7 +45,7 @@ def session(database_url):
         yield s
         s.rollback()
         # Clean tables between tests (CASCADE handles FKs).
-        s.execute(text("TRUNCATE votes, articles, topics, accounts, login_tokens, sessions, admin_sessions, media_sources RESTART IDENTITY CASCADE"))
+        s.execute(text("TRUNCATE votes, articles, topics, accounts, login_tokens, sessions, admin_sessions, media_sources, deleted_sources RESTART IDENTITY CASCADE"))
         s.commit()
 
 
@@ -115,3 +115,11 @@ def logged(client, session):
     client.cookies.set(SESSION_COOKIE, token)
     client.account_id = account.id
     return client
+
+
+@pytest.fixture(autouse=True)
+def _no_real_dns(monkeypatch):
+    """No test resolves a name for real: every name is a public address unless a test injects its own resolver."""
+    from app.services import safe_fetch
+
+    monkeypatch.setattr(safe_fetch, "system_resolver", lambda host, port: ["93.184.216.34"])

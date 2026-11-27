@@ -80,7 +80,7 @@ Variables d'environnement (voir `.env.example`) :
 | `DEMO_SEED` | `true` autorise `python -m app.cli seed-demo` (données fictives, développement seulement ; refusé avec `COOKIE_SECURE=true`) |
 | `RATE_LIMIT_*`, `CLAIM_MAX_VOTES` | Limites de débit (dont `RATE_LIMIT_VOTE_PER_ACCOUNT`, 120 votes par minute et par compte) et plafond du rattachement de votes (voir [api/README.md](api/README.md)) |
 
-Fichiers dans `api/config/` : `feeds.yaml` (flux RSS des médias), `clustering.yaml` (seuil de similarité, fenêtre de temps, sources minimales pour la une) et `halving.yaml` (sévérité du halving) et `front.yaml` (seuils et classement de la une) ; valeurs validées au chargement, hors bornes refusées. Le fonctionnement du halving est expliqué dans [docs/halving.md](docs/halving.md).
+Fichiers dans `api/config/` : `feeds.yaml` (flux RSS de départ : il n'initialise que la base, qui reste la référence, gérée depuis /admin, onglet Sources), `clustering.yaml` (seuil de similarité, fenêtre de temps, sources minimales pour la une) et `halving.yaml` (sévérité du halving) et `front.yaml` (seuils et classement de la une) ; valeurs validées au chargement, hors bornes refusées. Le fonctionnement du halving est expliqué dans [docs/halving.md](docs/halving.md).
 
 ## Alimentation en sujets
 
@@ -124,7 +124,7 @@ Les e-mails arrivent dans l'interface de mailpit, <http://localhost:8025> (SMTP 
 Les tests utilisent une vraie base PostgreSQL (une base jetable `citizen_news_test` est créée, migrée, puis supprimée), dans un service `db-test` léger (profil `test`, données en tmpfs), séparé de `db`.
 
 ```bash
-scripts/test-api.sh                      # toute la suite (221 tests)
+scripts/test-api.sh                      # toute la suite (437 tests)
 scripts/test-api.sh tests/test_auth.py   # un seul fichier
 ```
 
