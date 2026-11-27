@@ -1,228 +1,171 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, screen, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { act, fireEvent, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderApp } from "../test/utils";
-import type { FrontTopic } from "../api/types";
+import { res, stubFetch } from "../test/api-stub";
+import type { CurrentEdition, Edition, EditionTopic } from "../api/types";
 
-const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString();
+const NOW = "2026-11-27T10:00:00Z";
+const CLOSE = "2026-11-27T16:00:00Z";
 
-const topic = (over: Partial<FrontTopic> = {}): FrontTopic => ({
-  id: 1,
+const topic = (over: Partial<EditionTopic> = {}): EditionTopic => ({
+  rank: 1,
+  topic_id: 12,
   title: "Pénurie de médecins",
   summary: "Des délais de trois mois.",
   sources: [
-    { name: "Le Monde", url: "https://example.org/a", title: "Titre A", published_at: hoursAgo(5) },
-    { name: "Ouest-France", url: "https://example.org/b", title: "Titre B", published_at: hoursAgo(9) },
-    { name: "Piégé", url: "javascript:alert(1)", title: "x", published_at: hoursAgo(9) },
+    { name: "Le Monde", url: "https://example.org/a", title: "Titre A", published_at: "2026-11-26T09:00:00Z" },
+    { name: "Piégé", url: "javascript:alert(1)", title: "x", published_at: "2026-11-26T09:00:00Z" },
   ],
+  source_count: 5,
+  article_count: 9,
+  approvals: 80,
+  proportion: 0.667,
   image_url: null,
-  first_seen_at: hoursAgo(72),
-  updated_at: hoursAgo(2),
-  support: { level: "high", votes_count: 10 },
-  reason: { code: "common_priority", label: "Priorité commune" },
   ...over,
 });
 
-function stubApi(front: () => Response | Promise<Response>) {
-  const fn = vi.fn(async (url: string) => {
-    if (url.startsWith("/api/topics/front")) return front();
-    if (url === "/api/me") return new Response("{}", { status: 401 });
-    return new Response("{}", { status: 404 });
-  });
-  vi.stubGlobal("fetch", fn);
-  return fn;
-}
-const ok = (items: FrontTopic[], has_more = false) =>
-  new Response(JSON.stringify({ items, has_more }), { status: 200 });
+const edition = (over: Partial<Edition> = {}): Edition => ({
+  date: "2026-11-26",
+  published_at: "2026-11-26T16:00:00Z",
+  participants: 120,
+  topics: [topic(), topic({ rank: 2, topic_id: 7, title: "Budget", approvals: 1, proportion: 1 / 120, source_count: 1 })],
+  ...over,
+});
+
+const current = (e: Edition | null, next = CLOSE, server = NOW): CurrentEdition => ({
+  edition: e,
+  next_close_at: next,
+  server_time: server,
+});
+
+const stub = (body: CurrentEdition) =>
+  stubFetch({ "GET /api/me": () => res(401, {}), "GET /api/edition/current": () => res(200, body) });
 
 afterEach(() => vi.unstubAllGlobals());
 
-describe("La une citoyenne", () => {
-  it("affiche une carte complète", async () => {
-    stubApi(() => ok([topic()]));
+describe("Accueil : la une publiée", () => {
+  it("affiche publication, participants, lien permanent et les sujets", async () => {
+    stub(current(edition()));
     renderApp("/");
-    const card = await screen.findByRole("article", { name: "Pénurie de médecins" });
-    expect(within(card).getByText("Priorité commune")).toBeInTheDocument();
-    expect(within(card).getByText("Des délais de trois mois.")).toBeInTheDocument();
-    expect(within(card).getByText("Soutien élevé")).toBeInTheDocument();
-    const lemonde = within(card).getByRole("link", { name: /Le Monde/ });
-    expect(lemonde).toHaveAttribute("href", "https://example.org/a");
-    expect(within(card).getByRole("link", { name: /Ouest-France/ })).toBeInTheDocument();
-    expect(within(card).getByText(/il y a 2 heures/)).toBeInTheDocument();
-    expect(within(card).getByText(/Apparu/)).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "La une citoyenne" })).toBeInTheDocument();
+    const articles = await screen.findAllByRole("article");
+    expect(articles).toHaveLength(2);
+    expect(screen.getByText(/Publiée le/)).toHaveTextContent(/26 novembre 2026 à \d{2}:\d{2}/);
+    expect(screen.getByText(/120 participants/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /\/une\/2026-11-26$/ })).toHaveAttribute("href", "/une/2026-11-26");
+    expect(document.title).toBe("La une citoyenne du 26 novembre 2026 — Citizen News");
+    // titres : h1 puis h2 par sujet
+    expect(screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent)).toEqual(["Pénurie de médecins", "Budget"]);
   });
 
-  it("affiche l'image du sujet, puis la retire proprement si elle ne charge pas", async () => {
-    stubApi(() => ok([topic({ image_url: "https://img.example.org/a.jpg" }), topic({ id: 2, title: "Autre sujet" })]));
+  it("une carte : rang, résumé, proportion, médias, articles, approbations, sources", async () => {
+    stub(current(edition()));
     renderApp("/");
     const card = await screen.findByRole("article", { name: "Pénurie de médecins" });
+    expect(within(card).getByText("Sujet n° 1")).toBeInTheDocument();
+    expect(within(card).getByText("Des délais de trois mois.")).toBeInTheDocument();
+    expect(within(card).getByText("67 % des unes")).toBeInTheDocument();
+    expect(within(card).getByText(/80 approbations/)).toBeInTheDocument();
+    expect(within(card).getByText(/5 médias · 9 articles/)).toBeInTheDocument();
+    expect(within(card).getByRole("link", { name: /Le Monde/ })).toHaveAttribute("href", "https://example.org/a");
+    expect(within(card).queryByRole("link", { name: /Piégé/ })).toBeNull();
+    const second = screen.getByRole("article", { name: "Budget" });
+    expect(within(second).getByText(/1 média · /)).toBeInTheDocument();
+    expect(within(second).getByText(/1 approbation$/)).toBeInTheDocument();
+  });
+
+  it("image en hotlink sans referrer, retirée proprement si elle ne charge pas", async () => {
+    stub(current(edition({ topics: [topic({ image_url: "https://img.example.org/a.jpg" }), topic({ rank: 2 })] })));
+    renderApp("/");
+    const card = (await screen.findAllByRole("article"))[0];
     const img = within(card).getByRole("img", { name: "Illustration : Pénurie de médecins" });
-    expect(img).toHaveAttribute("src", "https://img.example.org/a.jpg");
-    expect(img).toHaveAttribute("loading", "lazy");
     expect(img).toHaveAttribute("referrerpolicy", "no-referrer");
-    expect(within(screen.getByRole("article", { name: "Autre sujet" })).queryByRole("img")).toBeNull();
+    expect(within(screen.getAllByRole("article")[1]).queryByRole("img")).toBeNull();
     fireEvent.error(img);
     expect(within(card).queryByRole("img")).toBeNull();
     expect(within(card).getByRole("heading", { name: "Pénurie de médecins" })).toBeInTheDocument();
-    expect(within(card).getByText("Des délais de trois mois.")).toBeInTheDocument();
   });
 
-  it("ne rend pas cliquable un lien non http(s)", async () => {
-    stubApi(() => ok([topic()]));
+  it("bouton principal « Composer ma une » vers /composer", async () => {
+    stub(current(edition()));
     renderApp("/");
-    const card = await screen.findByRole("article");
-    expect(within(card).queryByRole("link", { name: /Piégé/ })).toBeNull();
-    expect(within(card).getByText("Piégé")).toBeInTheDocument();
+    const links = await screen.findAllByRole("link", { name: "Composer ma une" });
+    expect(links.every((l) => l.getAttribute("href") === "/composer")).toBe(true);
   });
 
-  it.each([
-    ["low", "Soutien faible"],
-    ["medium", "Soutien moyen"],
-    ["high", "Soutien élevé"],
-  ] as const)("niveau %s : libellé « %s »", async (level, label) => {
-    stubApi(() => ok([topic({ support: { level, votes_count: 1 } })]));
+  it("édition null : message de première une et compte à rebours", async () => {
+    stub(current(null));
     renderApp("/");
-    expect(await screen.findByText(label)).toBeInTheDocument();
+    expect(await screen.findByText("La première une sera publiée à 17 h.")).toBeInTheDocument();
+    expect(screen.getByTestId("countdown")).toBeInTheDocument();
+    expect(screen.queryByRole("article")).toBeNull();
   });
 
-  it.each([
-    ["strong_mobilisation", "Forte mobilisation"],
-    ["under_the_radar", "Sous les radars"],
-    ["emerging", "Sujet émergent"],
-  ] as const)("badge %s", async (code, label) => {
-    stubApi(() => ok([topic({ reason: { code, label } })]));
+  it("édition sans sujet : message honnête", async () => {
+    stub(current(edition({ participants: 0, topics: [] })));
     renderApp("/");
-    expect(await screen.findByText(label)).toBeInTheDocument();
-  });
-
-  it("un code de raison inconnu s'affiche avec son label", async () => {
-    stubApi(() =>
-      ok([topic({ reason: { code: "nouveau_code" as never, label: "Nouveauté du jour" } })]),
-    );
-    renderApp("/");
-    expect(await screen.findByText("Nouveauté du jour")).toBeInTheDocument();
-  });
-
-  it("affiche des squelettes pendant le chargement", () => {
-    stubApi(() => new Promise<Response>(() => {}));
-    renderApp("/");
-    expect(screen.getByText("Chargement de la une…")).toBeInTheDocument();
+    expect(await screen.findByText(/Personne n’a encore composé de une/)).toBeInTheDocument();
+    expect(screen.getByText(/0 participant\b/)).toBeInTheDocument();
+    expect(screen.queryByRole("article")).toBeNull();
   });
 
   it("propose de réessayer après une erreur", async () => {
     let calls = 0;
-    stubApi(() => (++calls === 1 ? new Response("{}", { status: 500 }) : ok([topic()])));
+    stubFetch({
+      "GET /api/me": () => res(401, {}),
+      "GET /api/edition/current": () => (++calls === 1 ? res(500, {}) : res(200, current(edition()))),
+    });
     renderApp("/");
     expect(await screen.findByRole("alert")).toHaveTextContent(/Impossible de charger/);
     await userEvent.click(screen.getByRole("button", { name: "Réessayer" }));
     expect(await screen.findByRole("article", { name: "Pénurie de médecins" })).toBeInTheDocument();
   });
+});
 
-  it("affiche un message quand la liste est vide", async () => {
-    stubApi(() => ok([]));
+describe("Compte à rebours", () => {
+  beforeEach(() => vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"], now: new Date(NOW) }));
+  afterEach(() => vi.useRealTimers());
+
+  async function load(body: CurrentEdition) {
+    stub(body);
     renderApp("/");
-    expect(await screen.findByText(/La une est vide/)).toBeInTheDocument();
+    // fetch/Promise réels : on laisse la file de micro-tâches se vider sans horloge fausse sur setTimeout
+    await vi.waitFor(() => expect(screen.getByTestId("countdown")).toBeInTheDocument());
+  }
+
+  it("décompte à la seconde", async () => {
+    await load(current(edition()));
+    expect(screen.getByTestId("countdown")).toHaveTextContent("6 h 00 min 00 s");
+    act(() => vi.advanceTimersByTime(1000));
+    expect(screen.getByTestId("countdown")).toHaveTextContent("5 h 59 min 59 s");
+    act(() => vi.advanceTimersByTime(59 * 60_000));
+    expect(screen.getByTestId("countdown")).toHaveTextContent("5 h 00 min 59 s");
   });
 
-  it("propose l'appel à l'action vers « À vous de jouer »", async () => {
-    stubApi(() => ok([topic()]));
-    renderApp("/");
-    const cta = await screen.findByRole("complementary", { name: "Participer" });
-    expect(within(cta).getByRole("link", { name: "À vous de jouer" })).toHaveAttribute("href", "/jouer");
+  it("corrige le décalage entre l'horloge du lecteur et server_time", async () => {
+    // le lecteur retarde de 1 h : le serveur dit 10:00, l'appareil 09:00
+    vi.setSystemTime(new Date("2026-11-27T09:00:00Z"));
+    await load(current(edition(), CLOSE, NOW));
+    expect(screen.getByTestId("countdown")).toHaveTextContent("6 h 00 min");
   });
 
-  describe("Voir plus", () => {
-    const many = (n: number) => Array.from({ length: n }, (_, i) => topic({ id: i + 1, title: `Sujet ${i + 1}` }));
-    const limitOf = (url: string) => Number(new URL(url, "http://x").searchParams.get("limit"));
+  it("édition null : le compte à rebours part de server_time", async () => {
+    await load(current(null));
+    expect(screen.getByTestId("countdown")).toHaveTextContent("6 h 00 min 00 s");
+  });
 
-    it("affiche 10 sujets, puis 20 au clic, sans doublon", async () => {
-      const fn = stubApi(() => ok([]));
-      fn.mockImplementation(async (url: string) => {
-        if (url.startsWith("/api/topics/front")) {
-          const n = limitOf(url);
-          return ok(many(n), n < 30);
-        }
-        return new Response("{}", { status: 401 });
-      });
-      renderApp("/");
-      await screen.findByRole("article", { name: "Sujet 1" });
-      expect(screen.getAllByRole("article")).toHaveLength(10);
-      expect(fn.mock.calls.some(([u]) => limitOf(u as string) === 10)).toBe(true);
-      const btn = screen.getByRole("button", { name: "Voir plus" });
-      await userEvent.click(btn);
-      await screen.findByRole("article", { name: "Sujet 20" });
-      const titles = screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent);
-      expect(titles).toHaveLength(20);
-      expect(new Set(titles).size).toBe(20);
-      expect(screen.getByRole("button", { name: "Voir plus" })).toHaveFocus();
-    });
+  it("n'est pas une zone live (pas d'annonce chaque seconde) et expose un nom", async () => {
+    await load(current(edition()));
+    const timer = screen.getByRole("timer");
+    expect(timer).not.toHaveAttribute("aria-live", "assertive");
+    expect(timer).toHaveAccessibleName("Temps restant avant la prochaine une");
+    expect(document.querySelector("[aria-live]")).toBeNull();
+  });
 
-    it("garde la liste pendant le chargement et indique « Chargement… »", async () => {
-      let release: (r: Response) => void = () => {};
-      const fn = stubApi(() => ok([]));
-      fn.mockImplementation(async (url: string) => {
-        if (!url.startsWith("/api/topics/front")) return new Response("{}", { status: 401 });
-        if (limitOf(url) === 10) return ok(many(10), true);
-        return new Promise<Response>((r) => (release = r));
-      });
-      renderApp("/");
-      await screen.findByRole("article", { name: "Sujet 1" });
-      await userEvent.click(screen.getByRole("button", { name: "Voir plus" }));
-      expect(await screen.findByRole("button", { name: "Chargement…" })).toBeInTheDocument();
-      expect(screen.getAllByRole("article")).toHaveLength(10);
-      release(ok(many(20), false));
-      await screen.findByRole("article", { name: "Sujet 20" });
-    });
-
-    it("n'affiche pas le bouton quand has_more est faux", async () => {
-      stubApi(() => ok(many(3), false));
-      renderApp("/");
-      await screen.findByRole("article", { name: "Sujet 1" });
-      expect(screen.queryByRole("button", { name: "Voir plus" })).toBeNull();
-    });
-
-    it("n'affiche plus le bouton à la limite de 50", async () => {
-      const fn = stubApi(() => ok([]));
-      fn.mockImplementation(async (url: string) =>
-        url.startsWith("/api/topics/front") ? ok(many(limitOf(url)), true) : new Response("{}", { status: 401 }),
-      );
-      renderApp("/");
-      await screen.findByRole("article", { name: "Sujet 10" });
-      for (let n = 20; n <= 50; n += 10) {
-        await userEvent.click(await screen.findByRole("button", { name: "Voir plus" }));
-        await screen.findByRole("article", { name: `Sujet ${n}` });
-      }
-      expect(screen.queryByRole("button", { name: /Voir plus|Chargement/ })).toBeNull();
-      expect(screen.getAllByRole("article")).toHaveLength(50);
-      expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Sujet 41" }));
-    }, 15000);
-
-    it("passe le focus au premier nouvel élément quand le bouton disparaît (has_more=false)", async () => {
-      const fn = stubApi(() => ok([]));
-      fn.mockImplementation(async (url: string) =>
-        url.startsWith("/api/topics/front")
-          ? ok(many(Math.min(limitOf(url), 15)), limitOf(url) < 15)
-          : new Response("{}", { status: 401 }),
-      );
-      renderApp("/");
-      await screen.findByRole("article", { name: "Sujet 10" });
-      await userEvent.click(screen.getByRole("button", { name: "Voir plus" }));
-      await screen.findByRole("article", { name: "Sujet 15" });
-      expect(screen.queryByRole("button", { name: "Voir plus" })).toBeNull();
-      expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Sujet 11" }));
-    });
-
-    it("garde la liste et propose de réessayer si « Voir plus » échoue", async () => {
-      const fn = stubApi(() => ok([]));
-      fn.mockImplementation(async (url: string) => {
-        if (!url.startsWith("/api/topics/front")) return new Response("{}", { status: 401 });
-        return limitOf(url) === 10 ? ok(many(10), true) : new Response("{}", { status: 500 });
-      });
-      renderApp("/");
-      await screen.findByRole("article", { name: "Sujet 1" });
-      await userEvent.click(screen.getByRole("button", { name: "Voir plus" }));
-      expect(await screen.findByRole("alert")).toHaveTextContent(/plus de sujets/);
-      expect(screen.getAllByRole("article")).toHaveLength(10);
-    });
+  it("à l'heure dite : « Publication en cours… »", async () => {
+    await load(current(edition(), "2026-11-27T10:00:02Z"));
+    act(() => vi.advanceTimersByTime(3000));
+    expect(screen.getByText("Publication en cours…")).toBeInTheDocument();
   });
 });

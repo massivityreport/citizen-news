@@ -1,18 +1,17 @@
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { AccountMenu } from "./AccountMenu";
-import { useClaimOnSession } from "../votes";
 import styles from "./Layout.module.css";
 
 const NAV = [
-  { to: "/", label: "La une citoyenne", end: true },
-  { to: "/jouer", label: "À vous de jouer", end: false },
+  { to: "/", label: "Accueil", end: true },
+  { to: "/composer", label: "Composer", end: false },
+  { to: "/archives", label: "Archives", end: false },
   { to: "/comment-ca-marche", label: "Comment ça marche", end: false },
 ];
 
 export function Layout() {
   const { pathname } = useLocation();
-  useClaimOnSession();
-  const showFixedCta = pathname !== "/jouer";
+  const showFixedCta = pathname !== "/composer";
 
   return (
     <div className={styles.shell}>
@@ -45,8 +44,8 @@ export function Layout() {
         <p>Citizen News — la une choisie par les citoyens.</p>
       </footer>
       {showFixedCta && (
-        <Link to="/jouer" className={styles.fixedCta} data-testid="fixed-cta">
-          À vous de jouer
+        <Link to="/composer" className={styles.fixedCta} data-testid="fixed-cta">
+          Composer ma une
         </Link>
       )}
     </div>

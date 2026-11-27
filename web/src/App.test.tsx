@@ -23,7 +23,9 @@ afterEach(() => vi.unstubAllGlobals());
 describe("routage", () => {
   it.each([
     ["/", "La une citoyenne"],
-    ["/jouer", "À vous de jouer"],
+    ["/composer", "Composer ma une"],
+    ["/jouer", "Composer ma une"],
+    ["/archives", "Archives"],
     ["/comment-ca-marche", "Comment ça marche"],
     ["/connexion", "Se connecter"],
   ])("%s affiche le titre « %s »", async (route, title) => {
@@ -39,13 +41,13 @@ describe("routage", () => {
 });
 
 describe("layout", () => {
-  it("expose les landmarks et la navigation principale sans Explorer/Proposer", async () => {
+  it("expose les landmarks et la navigation principale ", async () => {
     renderApp("/");
     expect(screen.getByRole("banner")).toBeInTheDocument();
     expect(screen.getByRole("main")).toBeInTheDocument();
     const nav = screen.getByRole("navigation", { name: /principale/i });
     const labels = within(nav).getAllByRole("link").map((l) => l.textContent);
-    expect(labels).toEqual(["La une citoyenne", "À vous de jouer", "Comment ça marche"]);
+    expect(labels).toEqual(["Accueil", "Composer", "Archives", "Comment ça marche"]);
     expect(screen.queryByText(/explorer/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/proposer/i)).not.toBeInTheDocument();
   });
@@ -55,15 +57,15 @@ describe("layout", () => {
     expect(screen.getByRole("link", { name: /aller au contenu/i })).toHaveAttribute("href", "#contenu");
   });
 
-  it("affiche le bouton fixe « À vous de jouer » vers /jouer", async () => {
+  it("affiche le bouton fixe « Composer ma une » vers /composer", async () => {
     renderApp("/");
     const fixed = document.querySelector("[data-testid='fixed-cta']") as HTMLElement;
-    expect(fixed).toHaveAttribute("href", "/jouer");
-    expect(fixed.textContent).toBe("À vous de jouer");
+    expect(fixed).toHaveAttribute("href", "/composer");
+    expect(fixed.textContent).toBe("Composer ma une");
   });
 
-  it("masque le bouton fixe sur /jouer", async () => {
-    renderApp("/jouer");
+  it("masque le bouton fixe sur /composer", async () => {
+    renderApp("/composer");
     expect(document.querySelector("[data-testid='fixed-cta']")).toBeNull();
   });
 

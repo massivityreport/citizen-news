@@ -1,5 +1,4 @@
-import type { Vote } from "../src/api/types";
-import { frontTopics, voteDeck } from "./fixtures";
+import { editions } from "./fixtures";
 
 const LATENCY_MS = 150;
 const json = (status: number, body?: unknown, headers?: Record<string, string>) =>
@@ -8,55 +7,41 @@ const json = (status: number, body?: unknown, headers?: Record<string, string>) 
     headers: { "Content-Type": "application/json", ...headers },
   });
 
-type Body = { topic_id?: number; choice?: string; email?: string; token?: string; votes?: Vote[] } | undefined;
-const CHOICES = ["more", "not_priority", "unknown"];
+type Body = { email?: string; token?: string } | undefined;
 
 /**
  * Simule l'API en interceptant fetch pour les URL /api/*.
- * État en mémoire (session, votes) : remis à zéro au rechargement.
+ * État en mémoire (session) : remis à zéro au rechargement.
  */
 export function installMocks() {
   const realFetch = window.fetch.bind(window);
   let session: string | null = null;
-  const votes = new Map<number, string>();
 
   async function handle(method: string, url: URL, body: Body): Promise<Response> {
     const path = url.pathname.replace(/^\/api/, "");
     const route = `${method} ${path}`;
 
     switch (route) {
-      case "GET /topics/front": {
-        const limit = Number(url.searchParams.get("limit") ?? 20);
-        return json(200, { items: frontTopics.slice(0, limit) });
+      case "GET /edition/current": {
+        // Fermeture dans 2 h : le compte à rebours bouge sous les yeux. ?mock=vide : aucune édition publiée.
+        const none = new URLSearchParams(window.location.search).get("mock") === "vide";
+        return json(200, {
+          edition: none ? null : editions[0],
+          next_close_at: new Date(Date.now() + 2 * 3_600_000).toISOString(),
+          server_time: new Date().toISOString(),
+        });
       }
-      case "GET /vote/next": {
-        const count = Number(url.searchParams.get("count") ?? 10);
-        const seen = new Set((url.searchParams.get("seen") ?? "").split(",").filter(Boolean).map(Number));
-        const items = voteDeck.filter((t) => !seen.has(t.id)).slice(0, count);
-        return json(200, { items });
+      case "GET /editions": {
+        const limit = Number(url.searchParams.get("limit") ?? 30);
+        return json(200, {
+          items: editions.slice(0, limit).map((e) => ({
+            date: e.date,
+            published_at: e.published_at,
+            participants: e.participants,
+            topic_count: e.topics.length,
+          })),
+        });
       }
-      case "POST /votes": {
-        if (!session) return json(401, { detail: "Connectez-vous pour enregistrer votre vote." });
-        if (!CHOICES.includes(body?.choice ?? "")) return json(422, { detail: "Choix invalide." });
-        votes.set(body!.topic_id!, body!.choice!);
-        return json(200, { topic_id: body!.topic_id, choice: body!.choice });
-      }
-      case "POST /votes/claim": {
-        if (!session) return json(401, { detail: "Connectez-vous pour enregistrer vos votes." });
-        const list = body?.votes ?? [];
-        if (list.length > 200) return json(422, { detail: "Trop de votes dans un seul lot (200 maximum)." });
-        // Un vote déjà enregistré n'est pas écrasé par un vote anonyme réclamé.
-        let claimed = 0;
-        for (const v of list) {
-          if (votes.has(v.topic_id)) continue;
-          votes.set(v.topic_id, v.choice);
-          claimed++;
-        }
-        return json(200, { claimed });
-      }
-      case "GET /votes/mine":
-        if (!session) return json(401, { detail: "Non connecté." });
-        return json(200, { votes: [...votes].map(([topic_id, choice]) => ({ topic_id, choice })) });
       case "POST /auth/magic-link":
         if (!body?.email || !String(body.email).includes("@")) return json(422, { detail: "Adresse e-mail invalide." });
         // Pour rejouer le cas « trop de demandes » : limite@example.org
@@ -73,19 +58,13 @@ export function installMocks() {
         return json(204);
       case "GET /me":
         return session ? json(200, { email: session }) : json(401, { detail: "Non connecté." });
-      case "GET /halving/config":
-        return json(200, {
-          params: { min_votes_first_decision: 20, keep_ratio: 0.5, waves: 3, new_topic_traffic_share: 0.3, rescue_share: 0.1 },
-          description: {
-            min_votes_first_decision: "Nombre minimal de votes réunis par un sujet avant que l’on décide de le conserver ou non.",
-            keep_ratio: "Part des sujets les mieux soutenus qui passent à la vague suivante.",
-            waves: "Nombre de vagues de sélection successives.",
-            new_topic_traffic_share: "Part des sujets proposés aux votants réservée aux nouveaux sujets.",
-            rescue_share: "Part des sujets proposés aux votants réservée au repêchage de sujets de la réserve.",
-          },
-        });
-      default:
+      default: {
+        const m = /^GET \/editions\/(\d{4}-\d{2}-\d{2})$/.exec(route);
+        const found = m && editions.find((e) => e.date === m[1]);
+        if (found) return json(200, found);
+        if (m) return json(404, { detail: "Édition introuvable." });
         return json(404, { detail: "Introuvable." });
+      }
     }
   }
 

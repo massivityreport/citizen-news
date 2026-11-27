@@ -1,7 +1,3 @@
-export type SupportLevel = "low" | "medium" | "high";
-export type ReasonCode = "common_priority" | "strong_mobilisation" | "under_the_radar" | "emerging";
-export type VoteChoice = "more" | "not_priority" | "unknown";
-
 export interface Source {
   name: string;
   url: string;
@@ -9,53 +5,71 @@ export interface Source {
   published_at: string;
 }
 
-export interface Support {
-  level: SupportLevel;
-  votes_count: number;
-}
-
-export interface Reason {
-  code: ReasonCode;
-  label: string;
-}
-
-/** Carte sans support : renvoyée par /vote/next (résultats masqués avant le vote). */
+/** Sujet du bassin (contrat V2) : aucun compteur d'approbation avant la publication. */
 export interface TopicCard {
   id: number;
   title: string;
   summary: string;
   sources: Source[];
-  /** https validée côté serveur, ou null. Chargée en hotlink par le navigateur. */
-  image_url: string | null;
+  article_count: number;
+  source_count: number;
   first_seen_at: string;
   updated_at: string;
+  /** https validée côté serveur, ou null. Chargée en hotlink par le navigateur. */
+  image_url: string | null;
 }
 
-export interface FrontTopic extends TopicCard {
-  support: Support;
-  reason: Reason;
+/** Sujet figé d'une édition publiée. `topic_id` peut être null (sujet supprimé depuis). */
+export interface EditionTopic {
+  rank: number;
+  topic_id: number | null;
+  title: string;
+  summary: string;
+  sources: Source[];
+  source_count: number;
+  article_count: number;
+  approvals: number;
+  /** approvals / participants, entre 0 et 1. */
+  proportion: number;
+  image_url: string | null;
 }
 
-export interface Vote {
-  topic_id: number;
-  choice: VoteChoice;
+export interface Edition {
+  /** Date locale AAAA-MM-JJ de la clôture : clé et permalien. */
+  date: string;
+  published_at: string;
+  participants: number;
+  topics: EditionTopic[];
 }
 
-export interface HalvingParams {
-  min_votes_first_decision: number;
-  keep_ratio: number;
-  waves: number;
-  new_topic_traffic_share: number;
-  rescue_share: number;
+export interface CurrentEdition {
+  edition: Edition | null;
+  next_close_at: string;
+  server_time: string;
 }
 
-export interface HalvingConfig {
-  params: HalvingParams;
-  description: Record<string, string>;
+export interface EditionSummary {
+  date: string;
+  published_at: string;
+  participants: number;
+  topic_count: number;
+}
+
+// Types propres au backoffice V1 : conservés tels quels jusqu'à la refonte de l'admin (tâches suivantes).
+export type AdminSupportLevel = "low" | "medium" | "high";
+export type AdminVoteChoice = "more" | "not_priority" | "unknown";
+export interface AdminReason {
+  code: string;
+  label: string;
 }
 
 export interface Me {
   email: string;
+}
+
+export interface VerifyResult extends Me {
+  /** Brouillon de une fusionné à la vérification (null : aucun, ou édition fermée). */
+  draft?: { added: number; ignored: number } | null;
 }
 
 export interface AdminSource {
@@ -138,8 +152,8 @@ export interface AdminTopicDetail {
   evaluated_at: string | null;
   article_count: number;
   source_count: number;
-  support: { score: number; level: SupportLevel; votes_count: number };
-  front: { on_front: boolean; reason: Reason | null };
+  support: { score: number; level: AdminSupportLevel; votes_count: number };
+  front: { on_front: boolean; reason: AdminReason | null };
   votes: {
     more: number;
     not_priority: number;
@@ -155,6 +169,6 @@ export interface AdminTopicDetail {
 
 export interface AdminVote {
   date: string;
-  choice: VoteChoice;
+  choice: AdminVoteChoice;
   account_id: number;
 }
