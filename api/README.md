@@ -8,7 +8,7 @@ Backend FastAPI + PostgreSQL. Contrat HTTP : [`docs/api-contract.md`](../docs/ap
 flux RSS ──ingest──▶ articles ──cluster──▶ topics
 ```
 
-V2 : chaque citoyen compose sa une de 10 sujets (table `selections`), figée en une une collective à 17 h (`editions`, `edition_topics`). Le schéma est posé (migration 0009, **irréversible côté données** : les votes et le halving V1 ont été supprimés) ; le bassin, la une personnelle et le brouillon du lien magique sont en place ; la clôture à 17 h (worker), l'agrégation et les éditions publiées sont en place ; l'aperçu de l'édition et les listes admin sont en place (contrat : [`docs/api-contract.md`](../docs/api-contract.md)).
+V2 : chaque citoyen compose sa une de 10 sujets (table `selections`), figée en une une collective à 17 h (`editions`, `edition_topics`). Le schéma vient de la migration 0009, **irréversible côté données** : les votes et le halving V1 ont été supprimés (sauvegarde avant migration : voir le [README racine](../README.md#mise-à-niveau-depuis-la-v1--suppression-irréversible-des-données-de-vote)). Le bassin, la une personnelle, le brouillon du lien magique, l'agrégation, la clôture à 17 h (worker), les éditions publiées, l'aperçu et les listes admin sont en place (contrat : [`docs/api-contract.md`](../docs/api-contract.md)).
 
 ```
 ```
@@ -23,10 +23,12 @@ docker compose run --rm api python -m app.cli cluster   # regroupe les articles 
 docker compose run --rm api python -m app.cli refresh   # ingest puis cluster
 docker compose run --rm api python -m app.cli close-edition            # publie l'édition due visée (target_edition, idempotent)
 docker compose run --rm api python -m app.cli close-edition --dry-run  # affiche le classement, ne publie rien
+docker compose run --rm api python -m app.cli close-edition --dry-run --now 2026-11-27T16:05:00Z   # idem, à une horloge simulée (fuseau obligatoire)
+docker compose run --rm -e DEMO_SEED=true api python -m app.cli close-edition --now 2026-11-27T16:05:00Z   # publie VRAIMENT à cette heure : développement seulement
 docker compose run --rm api python -m app.cli run --interval-minutes 15   # refresh en boucle + clôture chaque minute
 ```
 
-Le service `worker` exécute `run`. Deux boucles dans le même processus : l'ingestion toutes les `INGEST_INTERVAL_MINUTES` (15) et, dans un second thread, le tick de clôture toutes les 60 s (le premier tick est immédiat : un worker arrêté rattrape au démarrage). Chaque tick journalise ses exceptions sans s'arrêter ; SIGINT/SIGTERM arrêtent proprement les deux. Intervalle : variable `INGEST_INTERVAL_MINUTES` (défaut 15). Un flux en erreur (réseau, 404, XML invalide) est consigné dans les logs et n'arrête pas les autres ; `ingest` ne retourne un code d'erreur que si **aucun** flux n'a pu être lu. Toutes les commandes sont idempotentes : les relancer ne duplique rien.
+Le service `worker` exécute `run`. Deux boucles dans le même processus : l'ingestion toutes les `INGEST_INTERVAL_MINUTES` (15) et, dans un second thread, le tick de clôture toutes les 60 s (le premier tick est immédiat : un worker arrêté rattrape au démarrage). Chaque tick journalise ses exceptions sans s'arrêter ; SIGINT/SIGTERM arrêtent proprement les deux. Intervalle : variable `INGEST_INTERVAL_MINUTES` (défaut 15). Un flux en erreur (réseau, 404, XML invalide) est consigné dans les logs et n'arrête pas les autres ; `ingest` ne retourne un code d'erreur que si **aucun** flux n'a pu être lu. `--now` (horloge simulée) est utilisable avec `--dry-run` partout ; sans `--dry-run` il est refusé (code 2) sauf avec `DEMO_SEED=true` et `COOKIE_SECURE=false`, pour qu'on ne publie jamais une édition à une date fictive en production. Toutes les commandes sont idempotentes : les relancer ne duplique rien. Le worker doit recevoir les mêmes `EDITION_HOUR`, `EDITION_TIMEZONE`, `POOL_WINDOW_HOURS` et `RADAR_MAX_SOURCES` que l'API (le compose les passe aux deux) : le bassin au moment de la clôture est celui que les citoyens ont vu.
 
 ### `config/feeds.yaml`
 
@@ -60,7 +62,7 @@ Le titre du sujet est celui de l'article le plus représentatif (le plus proche 
 
 `/api/topics/front`, `/api/vote/next`, `/api/votes*` et `/api/halving/config` (V1) sont supprimés. Les sujets se consultent dans le bassin (`GET /api/topics/pool`) et dans le backoffice (`/api/admin/topics`).
 
-- **Bassin** (`app/services/pool.py`) : `eligible_pool(session, now, topic_ids=None)` est LA règle d'éligibilité (un article daté — `published_at`, sinon `fetched_at` — dans les `POOL_WINDOW_HOURS` dernières heures, et au moins `min_sources_for_front` médias distincts sur l'ensemble des articles du sujet) : une requête SQL agrégée, réutilisée par les écritures de la une et, à la tâche suivante, par la clôture. La fenêtre de regroupement (`window_hours`, 48 h) n'est pas touchée. La route (`app/routers/topics.py`) fait un nombre constant de requêtes quel que soit le nombre de sujets. `total` = nombre de sujets de l'onglet, `items` plafonné à 300. Réponse `Cache-Control: no-store`.
+- **Bassin** (`app/services/pool.py`) : `eligible_pool(session, now, topic_ids=None)` est LA règle d'éligibilité (un article daté — `published_at`, sinon `fetched_at` — dans les `POOL_WINDOW_HOURS` dernières heures, et au moins `min_sources_for_front` médias distincts sur l'ensemble des articles du sujet) : une requête SQL agrégée, réutilisée par les écritures de la une et par la clôture (via `aggregate`). La fenêtre de regroupement (`window_hours`, 48 h) n'est pas touchée. La route (`app/routers/topics.py`) fait un nombre constant de requêtes quel que soit le nombre de sujets. `total` = nombre de sujets de l'onglet, `items` plafonné à 300. Réponse `Cache-Control: no-store`.
 - **Calendrier** (`app/services/edition_calendar.py`) : `edition_state(session, now)` → `edition_date`, `closes_at` (UTC), `open`. Clôture à `EDITION_HOUR` h `EDITION_TIMEZONE` (zoneinfo, heure d'été gérée). Dès l'heure de clôture l'édition est fermée même sans publication ; elle rouvre pour le lendemain (une vide) quand une ligne `editions` existe pour le jour local. L'horloge est la dépendance `app.deps.clock` (surchargeable dans les tests avec `app.dependency_overrides`).
 - **Une personnelle** (`app/services/une.py`, routes `/api/me/une*`) : chaque écriture est une transaction qui verrouille d'abord la ligne du compte (`SELECT … FOR UPDATE`) : deux écritures du même compte sont sérialisées, la limite de 10 ne peut pas être dépassée par des requêtes simultanées. `PUT /api/me/une` (remplacement) exige des sujets existants, pas dans le bassin ; l'ajout unitaire exige le bassin (`422`), `merge` ignore les sujets inconnus ou hors bassin (compte dans `ignored`, tout comme ceux qui ne tiennent plus dans les 10 places ; un sujet déjà dans la une n'est ni ajouté ni ignoré).
 - **Agrégation et clôture** (`app/services/aggregation.py`, `edition_close.py`) : `aggregate` classe (score, `source_count`, `updated_at`, `id`), repère les égalités et capte les données de publication sans rien écrire ; `close_due_edition(session, now)` (worker, `close-edition`) publie `target_edition` (la plus ancienne édition due qui a des unes, sinon la plus récente : un jour avec des unes n'est jamais sauté ; même règle pour l'aperçu admin) : verrou advisory, une transaction, idempotente (voir le contrat). L'horloge est toujours injectée (`now`). `close-edition --dry-run` affiche le classement de l'édition due, ou de l'édition en cours si rien n'est dû.
@@ -70,10 +72,10 @@ Le titre du sujet est celui de l'article le plus représentatif (le plus proche 
 ### Données de démonstration
 
 ```bash
-docker compose run --rm -e DEMO_SEED=true api python -m app.cli seed-demo [--seed 1]
+docker compose run --rm -e DEMO_SEED=true api python -m app.cli seed-demo [--seed 1] [--reset]
 ```
 
-Crée des sujets « [Démo] … » et trois médias fictifs (sujets très couverts, peu couverts, tout juste arrivés, un seul média), un article par média. Aucun compte ni une : le seed V2 complet viendra avec la dernière tâche V2. Relancer remplace les données de démo. Refusé sans `DEMO_SEED=true` et avec `COOKIE_SECURE=true`.
+`app/services/demo.py`. Crée 5 médias fictifs **inactifs** (`https://demo.invalid/N.xml` : le worker ne les interroge pas), 20 sujets « [Démo] … » avec des articles des dernières 24 h (3 à 5 médias pour la plupart ; 2 ou 3 pour l'onglet « Sous les radars » ; certains avec une `image_url` https fictive), 12 comptes `demo-NN@example.invalid` (aucun e-mail n'est jamais envoyé) avec leurs unes pour l'édition en cours (`edition_state`) : 15 sujets approuvés, des égalités départagées par le nombre de médias puis par la fraîcheur, une égalité à 4 sujets à cheval sur la coupure 10/11, 5 sujets sans approbation ; et 3 éditions passées publiées (copies figées insérées directement : le bassin d'hier n'est pas rejouable) pour l'historique et les permaliens. Relancer **remplace** les données de démo (médias, sujets, comptes `@example.invalid` et `@demo.invalid` du seed V1, éditions dont les sujets sont préfixés « [Démo] ») sans toucher au reste ; `--reset` supprime en plus toutes les éditions et toutes les unes. Même `--seed`, même horloge, mêmes données. Refusé sans `DEMO_SEED=true` et avec `COOKIE_SECURE=true`. Ne jamais l'exécuter en production.
 
 ## Comptes et sessions
 
@@ -125,11 +127,13 @@ Toute erreur de validation (`422`) renvoie `{"detail": "Requête invalide (champ
 ### Code
 
 ```
-app/cli.py                  ingest / cluster / refresh / run / seed-demo
+app/cli.py                  ingest / cluster / refresh / close-edition / run / seed-demo
 app/services/ingest.py      récupération (httpx), parsing (feedparser), upsert
 app/services/clustering.py  TF-IDF + similarité cosinus
 app/services/topics.py      éligibilité des sujets, construction des TopicCard
-app/services/demo.py        données fictives (seed-demo)
+app/services/demo.py        données fictives V2 (seed-demo)
+app/services/aggregation.py classement, égalités, coupure (clôture et aperçu admin)
+app/services/edition_close.py clôture : publication figée, idempotente
 app/routers/auth.py         /api/auth/*, /api/me
 app/services/auth.py        jetons, comptes, sessions
 app/services/mailer.py      Mailer (SMTP, console)

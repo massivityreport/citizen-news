@@ -1,6 +1,22 @@
 # Citizen News
 
-Plateforme d'actualité participative : chaque citoyen compose sa une de 10 sujets, modifiable jusqu'à 17 h ; à 17 h on agrège les unes et on publie une une citoyenne collective, figée. Voir [le brief V2](docs/citizen-news-brief-v2.md) et [le contrat HTTP](docs/api-contract.md).
+**Citizen News, ce n'est pas Google News : c'est la une choisie par les citoyens.** Chaque jour, des articles de médias français sont regroupés en sujets (un sujet = un événement, au moins 2 médias). Chaque citoyen, connecté par lien magique, compose **sa une de 10 sujets** (sans ordre, poids égaux) dans le bassin du jour, modifiable jusqu'à 17 h ; à 17 h le serveur agrège toutes les unes et publie **la une collective du jour, figée**, consultable à une adresse stable (`/une/AAAA-MM-JJ`). Un backoffice protégé par mot de passe montre l'aperçu du classement avant publication, les égalités, les statistiques et gère les sources. Produit : [brief V2](docs/citizen-news-brief-v2.md) ; routes : [contrat HTTP](docs/api-contract.md) ; backend : [api/README.md](api/README.md). La V1 (vote, Successive Halving) a été **remplacée** : [brief V1](docs/citizen-news-brief.md), conservé pour mémoire.
+
+## Cycle quotidien
+
+```
+flux RSS ─ingest─▶ articles ─cluster─▶ sujets ──▶ bassin du jour (articles des POOL_WINDOW_HOURS dernières heures, >= 2 médias)
+                                                     │  onglets : Au hasard (graine du navigateur) · Récents · Sous les radars (<= RADAR_MAX_SOURCES médias)
+citoyen connecté : compose sa une (<= 10 sujets) jusqu'à EDITION_HOUR h ───┘
+17 h (EDITION_HOUR, EDITION_TIMEZONE) : le worker agrège (score = nombre de unes qui contiennent le sujet ; égalités :
+   médias distincts, puis fraîcheur, puis id) et publie l'édition : les 10 premiers, figés (titre, résumé, sources, approbations)
+```
+
+- **Worker** : un seul processus (`python -m app.cli run`) avec deux boucles : ingestion + regroupement toutes les `INGEST_INTERVAL_MINUTES` (15), et un tick de **clôture chaque minute** (séparé : une ingestion lente ne retarde jamais la clôture). La clôture est idempotente (verrou PostgreSQL + contrainte d'unicité) : un worker arrêté rattrape au redémarrage, sans éditions fantômes pour les jours vides.
+- **Heure** : `EDITION_HOUR` h dans le fuseau `EDITION_TIMEZONE` (17 h Europe/Paris = 16 h UTC en hiver, 15 h en été ; le changement d'heure est géré). `edition_date` est la date **locale** du jour de clôture : c'est la clé de l'édition et son permalien. Dès l'heure de clôture, la une du jour n'est plus modifiable (même si le worker a du retard) ; la une du lendemain s'ouvre à la publication.
+- **Bassin** : un sujet y est s'il a un article daté dans les `POOL_WINDOW_HOURS` (24) dernières heures **et** au moins 2 médias distincts. Le bassin n'expose **aucun compteur** d'approbation avant la publication. À la clôture, seuls comptent les sujets encore dans le bassin à cet instant.
+- **Sous les radars** : sujets du bassin couverts par au plus `RADAR_MAX_SOURCES` (3) médias.
+- **Limites de débit** (en mémoire, par processus API ; `429` + `Retry-After`) : lien magique par e-mail (5/h) et par IP (20/h), vérification par IP (30/h), connexion admin par IP (10 par 15 min), écritures de la une par compte (`RATE_LIMIT_UNE_WRITES_PER_ACCOUNT`, 60 par `RATE_LIMIT_UNE_WINDOW_SECONDS`, 60 s). Détail dans [api/README.md](api/README.md#limitation-de-débit).
 
 ## Prérequis
 
@@ -21,7 +37,7 @@ docker compose up --build db api worker   # sans le front ; l'application compl�
 
 ## Lancer toute l'application
 
-> **Ordre de merge des piles** : pile backend (`agent/api-test-env`), puis pile front (`agent/front-auth-how`, qui apporte `web/`), puis cette branche. Tant que `web/` n'existe pas, le service `web` du compose ne se construit pas (`docker compose up` échoue sur lui) : sur la pile backend seule, lancez `docker compose up --build db api worker` (voir « Démarrer »).
+> Le front (`web/`) est livré par une pile séparée. Tant qu'elle n'est pas fusionnée, le service `web` ne se construit pas (`docker compose up` échoue sur lui) : lancez alors `docker compose up --build db api worker` (voir « Démarrer »).
 
 Prérequis : Docker et Docker Compose v2, Python 3 (pour `scripts/smoke.py`, bibliothèque standard seule), un accès réseau sortant pour les flux RSS et pour `npm ci` au build du front.
 
@@ -31,8 +47,8 @@ cp .env.example .env
 #   MAIL_BACKEND=smtp  SMTP_HOST=mailpit  SMTP_PORT=1025  SMTP_STARTTLS=false  DEMO_SEED=true
 docker compose --profile mail up --build -d      # db, api, worker, web, mailpit
 docker compose exec worker python -m app.cli refresh   # premier ingest + regroupement (le worker le refera toutes les 15 min)
-docker compose run --rm -e DEMO_SEED=true api python -m app.cli seed-demo   # optionnel : médias et sujets fictifs
-python3 scripts/smoke.py --mailpit http://localhost:8025   # (pile backend seule : ajouter --api-only --base http://localhost:8000) parcours de bout en bout
+docker compose run --rm -e DEMO_SEED=true api python -m app.cli seed-demo   # optionnel : données de démonstration (voir « Données de démonstration »)
+python3 scripts/smoke.py                         # vérification de bout en bout de l'API (voir « Vérification : smoke.py »)
 ```
 
 | Quoi | Où |
@@ -41,10 +57,9 @@ python3 scripts/smoke.py --mailpit http://localhost:8025   # (pile backend seule
 | API directe, documentation | <http://localhost:8000>, <http://localhost:8000/docs> |
 | Mails (profil `mail`) | <http://localhost:8025> |
 
-- `APP_BASE_URL` vaut `http://localhost:8080` par défaut : le lien magique pointe sur le front. Sans mailpit (`MAIL_BACKEND=console`), passez `--logs` à `smoke.py` au lieu de `--mailpit` : il lit le lien dans `docker compose logs api`.
+- `APP_BASE_URL` vaut `http://localhost:8080` par défaut : le lien magique pointe sur le front. Sans mailpit (`MAIL_BACKEND=console`), le lien est écrit dans `docker compose logs api`.
 - Le navigateur n'appelle que `http://localhost:8080` : nginx proxifie `/api/` vers `api:8000`, donc même origine, pas de CORS ni de souci de cookie (`CORS_ORIGINS` reste configuré pour `npm run dev`, port 5173). `TRUST_PROXY` vaut `true` par défaut dans le compose : l'API lit l'IP cliente dans `X-Forwarded-For` posé par nginx, sinon toutes les limites par IP verraient l'adresse de nginx. Si vous atteignez l'API directement sur le port 8000, un client peut forger cet en-tête : c'est pourquoi le port 8000 n'est publié que sur `127.0.0.1` (`API_BIND`, à ne changer que derrière un pare-feu ou si `TRUST_PROXY=false`).
-- `scripts/smoke.py [--base URL] (--mailpit URL | --logs)` : crée un compte jetable `smoke-<horodatage>@example.org` et vérifie le front (`/`, repli SPA, `Referrer-Policy`), le lien magique (usage unique, cookie `httpOnly` `SameSite=Lax`), la déconnexion. **Il vérifie encore des routes V1 supprimées (`topics/front`, `vote/next`, `halving/config`, votes) : il échoue tant que la dernière tâche V2 ne l'a pas réécrit.** Code de sortie 1 et ligne `ÉCART : …` au premier écart. Il consomme un lien magique et quelques requêtes sur les limites de débit : pas plus de quelques lancements par heure. `--api-only` (avec `--base http://localhost:8000`) le lance contre l'API seule, sans vérifier le front ; sans cette option il exige le HTML du front.
-- La une collective est publiée par le worker à 17 h (Europe/Paris), vérifiée chaque minute ; `docker compose exec worker python -m app.cli close-edition --dry-run` affiche le classement sans publier.
+- La une collective est publiée par le worker à `EDITION_HOUR` h (17 h Europe/Paris), vérifiée chaque minute ; `docker compose exec worker python -m app.cli close-edition --dry-run` affiche le classement sans publier.
 - Tests de l'API : `scripts/test-api.sh` (voir « Tests »). Arrêt : `docker compose --profile mail down` (`-v` pour supprimer aussi la base).
 
 ### Limites connues
@@ -77,7 +92,11 @@ Variables d'environnement (voir `.env.example`) :
 | `MAIL_BACKEND` | `console` (défaut) : le lien est écrit dans les logs de l'API, **développement seulement** ; `smtp` : envoi réel |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_STARTTLS`, `MAIL_FROM` | Serveur SMTP (port 587 et STARTTLS par défaut ; `SMTP_HOST` obligatoire avec `smtp`). Le mot de passe ne vient que de l'environnement |
 | `TRUST_PROXY` | `true` derrière un reverse proxy (défaut du compose : nginx du service `web`) : l'IP cliente est la dernière entrée de `X-Forwarded-For` (sinon l'en-tête est ignoré) |
-| `DEMO_SEED` | `true` autorise `python -m app.cli seed-demo` (données fictives, développement seulement ; refusé avec `COOKIE_SECURE=true`) |
+| `EDITION_HOUR`, `EDITION_TIMEZONE` | Heure de clôture (17) et fuseau (`Europe/Paris`) ; changement d'heure géré. **L'API et le worker doivent avoir les mêmes valeurs** (le compose les passe aux deux) |
+| `POOL_WINDOW_HOURS` | Fenêtre du bassin, en heures (24) : un sujet y est s'il a un article plus récent (et au moins 2 médias). Même remarque : API et worker |
+| `RADAR_MAX_SOURCES` | Onglet « Sous les radars » : sujets couverts par au plus ce nombre de médias distincts (3) |
+| `RATE_LIMIT_UNE_WRITES_PER_ACCOUNT`, `RATE_LIMIT_UNE_WINDOW_SECONDS` | Écritures de la une par compte (60) sur la fenêtre (60 s) ; `429` au-delà |
+| `DEMO_SEED` | `true` autorise `python -m app.cli seed-demo` (données fictives, développement seulement ; refusé avec `COOKIE_SECURE=true`) et `close-edition --now` sans `--dry-run` |
 | `RATE_LIMIT_*` | Limites de débit (voir [api/README.md](api/README.md)) |
 
 Fichiers dans `api/config/` : `feeds.yaml` (flux RSS de départ : il n'initialise que la base, qui reste la référence, gérée depuis /admin, onglet Sources), `clustering.yaml` (seuil de similarité, fenêtre de temps, sources minimales pour qu'un sujet soit éligible) ; valeurs validées au chargement, hors bornes refusées.
@@ -85,24 +104,54 @@ Fichiers dans `api/config/` : `feeds.yaml` (flux RSS de départ : il n'initialis
 ## Backoffice
 
 - **Accès** : <http://localhost:8080/admin> (page non indexée). Connexion par le mot de passe unique `ADMIN_PASSWORD` (voir « Configuration » : à changer en production), session de `ADMIN_SESSION_HOURS` heures dans un cookie `cn_admin` distinct de la session citoyenne. Pas de comptes ni de rôles.
-- **Accueil** : chiffres clés (articles ingérés sur les 24 dernières heures glissantes et au total) et courbe sur 30 jours (jours en UTC) ; participants et unes enregistrées viendront avec la tâche admin V2. Le bouton « Actualiser » recharge ; pas de rafraîchissement automatique. **L'écran actuel du front (`web/`) affiche encore les votes : il sera adapté par l'autre développeur.**
+- **Accueil** : chiffres clés (articles ingérés, participants et sélections, sur les 24 dernières heures glissantes et au total) et courbe sur 30 jours (jours en UTC). Le bouton « Actualiser » recharge ; pas de rafraîchissement automatique.
+- **Édition** : l'**aperçu** du classement que la clôture publierait maintenant (les 10 de la une, les 10 suivants, les égalités et celle qui chevauche la coupure 10/11, critère de départage), calculé par la même fonction que la clôture ; la liste des éditions publiées et chaque édition avec ses approbations.
 - **Sources** : ajouter un flux RSS (vérifié côté serveur, adresses publiques seulement), le désactiver (l'ingestion l'ignore, ses articles et sujets restent) ou le supprimer définitivement (avec confirmation du nombre d'articles supprimés). La base est la référence ; `feeds.yaml` ne fait qu'initialiser.
 - **Articles** : liste paginée et triable, filtres par source, sujet, dates (date de publication ; un article sans date n'apparaît pas avec un filtre de date) et « non regroupés ».
-- **Sujets** : liste triable (titre, nombre d'articles, dernière mise à jour) avec nombres d'articles et de médias ; détail d'un sujet (articles). Les approbations viendront avec la tâche admin V2.
+- **Sujets** : liste triable (approbations de l'édition en cours par défaut, titre, articles, mise à jour) ; détail d'un sujet (articles, approbations, historique par édition publiée).
 - **Limites connues** : lecture seule pour les articles, sujets et statistiques (aucune modification, aucun export) ; aucune adresse e-mail n'est affichée ; les statistiques ne se rafraîchissent pas seules ; un sujet qui perd des articles (suppression d'une source) reste en base avec ses sélections et garde son titre jusqu'au prochain regroupement ; un seul mot de passe partagé, sans journal d'audit. Détail des routes : [docs/api-contract.md](docs/api-contract.md), section Admin.
 
 ## Alimentation en sujets
 
 ```bash
 docker compose run --rm api python -m app.cli refresh   # ingest + cluster, une fois
-curl -b cookies 'http://localhost:8000/api/admin/topics?page_size=5'   # après connexion admin (cookie cn_admin)
 ```
 
-Commandes `ingest`, `cluster`, `refresh`, `run`, `seed-demo`, réglage du seuil de regroupement et détail des endpoints : [api/README.md](api/README.md).
+Commandes `ingest`, `cluster`, `refresh`, `close-edition`, `run`, `seed-demo`, réglage du seuil de regroupement et détail des endpoints : [api/README.md](api/README.md).
 
-## Une personnelle et une collective (V2)
+## Données de démonstration
 
-Chaque citoyen compose sa une de 10 sujets (sans ordre, poids égaux) jusqu'à 17 h ; à 17 h, le worker agrège les unes et publie une une collective figée, consultable par date (`/une/AAAA-MM-JJ`). Le schéma (`selections`, `editions`, `edition_topics`) est en place (migration 0009 : **les votes et le halving V1 ont été supprimés, sans retour possible pour les données**) ; la clôture (worker), les routes des éditions publiées et l'agrégation sont en place ; l'aperçu et les listes admin arrivent avec la tâche suivante. Contrat cible : [docs/api-contract.md](docs/api-contract.md).
+```bash
+docker compose run --rm -e DEMO_SEED=true api python -m app.cli seed-demo [--seed 1] [--reset]
+```
+
+Développement seulement : refusé sans `DEMO_SEED=true` et avec `COOKIE_SECURE=true` ; ne l'exécutez jamais en production (`DEMO_SEED` doit y rester `false`), et le compose ne le lance jamais tout seul. Crée 5 médias fictifs inactifs (le worker ne les interroge pas), 20 sujets « [Démo] … » avec des articles des dernières 24 h (la plupart couverts par 3 à 5 médias, quelques-uns par 2 ou 3 pour « Sous les radars », certains avec une image `https://images.demo.invalid/…`), 12 comptes fictifs `demo-NN@example.invalid` (aucun e-mail n'est jamais envoyé) dont les unes pour l'édition en cours donnent un classement avec des égalités et une égalité à cheval sur la coupure 10/11 (visible dans l'aperçu admin), et 3 éditions passées publiées (veilles, avant-veilles…) pour l'historique, les permaliens et le backoffice. Idempotent : relancer remplace les données de démo, sans doublon et sans toucher aux données réelles ; `--reset` supprime en plus **toutes** les éditions et toutes les unes (calendrier vierge). Pour tester la clôture sans attendre 17 h : `python -m app.cli close-edition --dry-run --now 2026-11-27T16:05:00Z` (classement à cette heure) puis, avec `DEMO_SEED=true`, la même commande sans `--dry-run` (publie vraiment : l'option `--now`, fuseau obligatoire, est refusée sans `--dry-run` hors développement).
+
+## Vérification : `smoke.py`
+
+```bash
+python3 scripts/smoke.py [--base http://localhost:8000] [--radar-max 3]   # --base : l'API, ou le front nginx (8080) qui la proxifie
+ADMIN_PASSWORD=… python3 scripts/smoke.py                                 # ajoute la partie admin
+```
+
+Bibliothèque standard seule, contre une pile qui tourne (après `seed-demo` pour avoir de la matière). Il vérifie : la santé ; le bassin (3 onglets, graine stable, `422` sans graine, cartes complètes, `image_url` null ou https, **aucun compteur ni classement dans le bassin**) ; `GET /api/edition/current`, `/api/editions`, `/api/editions/{date}` (200 pour une édition existante, 404 sinon, 422 si mal formée) ; `401` sans session sur `/api/me`, `/api/me/une`, `/api/admin/edition/preview` et `/api/admin/stats` ; une demande de lien magique avec un brouillon (`202`) ; avec `ADMIN_PASSWORD` (variable d'environnement, jamais en argument) : mauvais mot de passe `401`, connexion, aperçu, éditions, statistiques, sujets (tri, aucune adresse e-mail), déconnexion. Il **ne vérifie pas le front** et dit quand un contrôle est sauté (bassin ou historique vide, `ADMIN_PASSWORD` absent). Code 1 et ligne `ÉCART : …` au premier écart. Il n'écrit en base qu'un jeton de lien magique (e-mail `smoke-<horodatage>@example.org` ; avec `MAIL_BACKEND=console`, aucun e-mail réel) : pas plus de quelques lancements par heure (limites de débit).
+
+## Mise à niveau depuis la V1 : suppression irréversible des données de vote
+
+La migration **0009** (appliquée au démarrage de l'API, `alembic upgrade head`) **supprime définitivement** la table `votes` et les colonnes de halving des sujets (`state`, `wave`, `state_changed_at`, `evaluated_at`, `votes_at_eval`) : tous les votes et états V1 sont perdus (décision produit : remplacement net de la V1). `downgrade` ne recrée que des structures **vides** ; il ne ramène aucune donnée. Marche à suivre en production, **avant** de déployer la nouvelle image (c'est son démarrage qui migre) :
+
+```bash
+# 1. sauvegarde (le dump contient les votes V1 : à conserver ou détruire selon votre politique de données)
+docker compose exec -T db pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc > citizen_news-avant-0009.dump
+# 2. vérifier que le dump est lisible
+pg_restore --list citizen_news-avant-0009.dump | head
+# 3. déployer : l'API migre au démarrage ; le worker démarre une fois l'API saine
+docker compose up -d --build
+# restauration éventuelle (retour à la V1 : ancienne image + ce dump) :
+docker compose exec -T db pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists < citizen_news-avant-0009.dump
+```
+
+Avant le premier déploiement : `COOKIE_SECURE=true`, `MAIL_BACKEND=smtp`, `ADMIN_PASSWORD` propre, `DEMO_SEED=false`. Les comptes (e-mails) et les sujets sont conservés ; les anciennes sessions restent valides.
 
 ## Comptes : connexion par lien magique
 
@@ -132,7 +181,34 @@ scripts/test-api.sh                      # toute la suite
 scripts/test-api.sh tests/test_auth.py   # un seul fichier
 ```
 
-Le code est monté en lecture seule : aucun rebuild après une modification. Mémoire nécessaire, pics mesurés et marche à suivre si elle manque : [api/README.md](api/README.md#tests).
+Le code est monté en lecture seule : aucun rebuild après une modification. Un fichier à la fois (mémoire limitée) ; mémoire nécessaire, pics mesurés et marche à suivre si elle manque : [api/README.md](api/README.md#tests). Les fichiers de `api/tests/` :
+
+| Fichier | Ce qu'il vérifie |
+|---|---|
+| `test_health.py` | `GET /api/health` (200, 503 si la base est indisponible) et CORS |
+| `test_schema.py` | contraintes du schéma V2 (une sélection par compte, jour et sujet ; date d'édition unique ; rang 1..10 ; suppressions en cascade ; plus de colonnes de halving) |
+| `test_migration_0009.py` | migration 0009 sur une base peuplée en V1 : données V2 créées, votes supprimés, `downgrade` |
+| `test_ingest.py` | ingestion RSS (parsing, doublons, flux en erreur, images, ré-ingestion), sans réseau |
+| `test_clustering.py` | regroupement TF-IDF : seuil, fenêtre, idempotence |
+| `test_feeds_config.py` | validation de `feeds.yaml` |
+| `test_safe_fetch.py` | garde SSRF de la récupération d'un flux (adresses privées, redirections, DNS) |
+| `test_topic_cards.py` | construction des cartes de sujet (sources, compteurs, image) |
+| `test_pool.py` | bassin : éligibilité, 3 onglets, graine, plafond, nombre de requêtes constant, aucun compteur |
+| `test_edition_calendar.py` | calendrier : `edition_date`, ouverture/fermeture, changement d'heure, retard du worker |
+| `test_me_une.py` | une personnelle `/api/me/une*` : limite de 10, concurrence, clôture, bassin |
+| `test_aggregation.py` | `aggregate` : scores, classement, égalités, coupure, données de publication, aucune écriture |
+| `test_close.py` | `close_due_edition` : publication figée, idempotence, rattrapage, atomicité, concurrence |
+| `test_worker.py` | tick de clôture du worker et commande `close-edition` |
+| `test_editions_api.py` | routes publiques des éditions ; aucun compteur accessible à un citoyen avant publication |
+| `test_auth.py`, `test_auth_draft.py`, `test_sessions.py` | lien magique, brouillon de une, sessions (jetons hachés, expiration, purge) et cookie |
+| `test_mailer.py`, `test_ratelimit.py` | envoi (SMTP/console) et limites de débit |
+| `test_admin_auth.py` | connexion admin : mot de passe, cookie, limite, protection de toutes les routes |
+| `test_admin_sources.py` | sources : liste, ajout (garde SSRF), désactivation, suppression confirmée |
+| `test_admin_articles.py`, `test_admin_topics.py`, `test_admin_topics_approvals.py` | articles et sujets admin : pagination, tri, filtres, approbations, historique |
+| `test_admin_stats.py` | statistiques (24 h, total, série de 30 jours) |
+| `test_admin_preview.py`, `test_admin_editions.py` | aperçu (même classement que la clôture, égalités, coupure, aucune écriture) et éditions admin |
+| `test_demo.py` | `seed-demo` (garde dev, idempotence, bassin, égalités et coupure, éditions passées, `--reset`) et `close-edition --now` |
+| `test_cli.py` | commandes `refresh` et boucle ; `halve` n'existe plus |
 
 ## Migrations
 
@@ -147,7 +223,7 @@ docker compose run --rm --user root -v "$PWD/api:/srv/api" api \
 
 ```
 docker-compose.yml        db (PostgreSQL 16) + api + worker (ingestion et regroupement périodiques, clôture de l'édition à 17 h) + web (front nginx, pile front) + mailpit (profil `mail`)
-scripts/                  test-api.sh (tests), smoke.py (parcours de bout en bout)
+scripts/                  test-api.sh (tests), smoke.py (vérification de l'API en marche)
 api/
   Dockerfile, pyproject.toml, alembic.ini
   alembic/versions/       migrations
@@ -157,8 +233,8 @@ api/
     models/               schéma de données
     routers/              routes HTTP (préfixe /api)
     services/             logique métier (ingestion, regroupement, sujets)
-    cli.py                commandes ingest / cluster / refresh / run / seed-demo
+    cli.py                commandes ingest / cluster / refresh / close-edition / run / seed-demo
   config/                 settings.py, feeds.py/.yaml, clustering.py/.yaml
   tests/                  pytest (base PostgreSQL réelle)
-docs/                     briefs produit (V1 et V2), contrat HTTP V2
+docs/                     brief produit V2 (le V1, remplacé, est gardé pour mémoire), contrat HTTP V2
 ```
