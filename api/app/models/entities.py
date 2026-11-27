@@ -80,6 +80,7 @@ class Article(Base):
         Index("ix_articles_published_at", "published_at"),
         Index("ix_articles_topic_id", "topic_id"),
         Index("ix_articles_source_id", "source_id"),
+        Index("ix_articles_fetched_at", "fetched_at"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -110,6 +111,7 @@ class Vote(Base):
         UniqueConstraint("account_id", "topic_id", name="uq_votes_account_id_topic_id"),
         CheckConstraint(_in("choice", VOTE_CHOICES), name="choice"),
         Index("ix_votes_topic_id", "topic_id"),
+        Index("ix_votes_created_at", "created_at"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)

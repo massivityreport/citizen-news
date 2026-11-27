@@ -1,6 +1,7 @@
 import type {
   AdminArticle,
   AdminSource,
+  AdminStats,
   AdminTopicDetail,
   AdminTopicRow,
   AdminVote,
@@ -161,6 +162,8 @@ export const api = {
   adminArticles: (params: Record<string, string>) => request<Page<AdminArticle>>(`/admin/articles${query(params)}`),
 
   adminTopics: (params: Record<string, string>) => request<Page<AdminTopicRow>>(`/admin/topics${query(params)}`),
+
+  adminStats: () => request<AdminStats>("/admin/stats"),
 
   adminTopic: (id: number) => request<AdminTopicDetail>(`/admin/topics/${id}`),
 

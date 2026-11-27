@@ -82,6 +82,15 @@ Variables d'environnement (voir `.env.example`) :
 
 Fichiers dans `api/config/` : `feeds.yaml` (flux RSS de départ : il n'initialise que la base, qui reste la référence, gérée depuis /admin, onglet Sources), `clustering.yaml` (seuil de similarité, fenêtre de temps, sources minimales pour la une) et `halving.yaml` (sévérité du halving) et `front.yaml` (seuils et classement de la une) ; valeurs validées au chargement, hors bornes refusées. Le fonctionnement du halving est expliqué dans [docs/halving.md](docs/halving.md).
 
+## Backoffice
+
+- **Accès** : <http://localhost:8080/admin> (page non indexée). Connexion par le mot de passe unique `ADMIN_PASSWORD` (voir « Configuration » : à changer en production), session de `ADMIN_SESSION_HOURS` heures dans un cookie `cn_admin` distinct de la session citoyenne. Pas de comptes ni de rôles.
+- **Accueil** : chiffres clés (articles ingérés, votes et votants sur les 24 dernières heures glissantes et au total) et trois courbes sur 30 jours (articles, votes, votants distincts par jour ; jours en UTC). Le bouton « Actualiser » recharge ; pas de rafraîchissement automatique. Les votants par jour ne s'additionnent pas d'un jour à l'autre.
+- **Sources** : ajouter un flux RSS (vérifié côté serveur, adresses publiques seulement), le désactiver (l'ingestion l'ignore, ses articles et sujets restent) ou le supprimer définitivement (avec confirmation du nombre d'articles supprimés). La base est la référence ; `feeds.yaml` ne fait qu'initialiser.
+- **Articles** : liste paginée et triable, filtres par source, sujet, dates (date de publication ; un article sans date n'apparaît pas avec un filtre de date) et « non regroupés ».
+- **Sujets** : liste triable avec état, vague et nombres d'articles, de médias et de votes ; détail d'un sujet (statut, raison de la une, votes et courbe par jour, liste de votes avec numéro de compte, articles).
+- **Limites connues** : lecture seule pour les articles, sujets, votes et statistiques (aucune modification, aucun export) ; aucune adresse e-mail n'est affichée (un vote montre le numéro de compte) ; les statistiques ne se rafraîchissent pas seules ; un sujet qui perd des articles (suppression d'une source) reste en base avec ses votes et garde son titre jusqu'au prochain regroupement ; un seul mot de passe partagé, sans journal d'audit. Détail des routes : [docs/api-contract.md](docs/api-contract.md), section Admin.
+
 ## Alimentation en sujets
 
 ```bash
@@ -124,7 +133,7 @@ Les e-mails arrivent dans l'interface de mailpit, <http://localhost:8025> (SMTP 
 Les tests utilisent une vraie base PostgreSQL (une base jetable `citizen_news_test` est créée, migrée, puis supprimée), dans un service `db-test` léger (profil `test`, données en tmpfs), séparé de `db`.
 
 ```bash
-scripts/test-api.sh                      # toute la suite (437 tests)
+scripts/test-api.sh                      # toute la suite
 scripts/test-api.sh tests/test_auth.py   # un seul fichier
 ```
 
