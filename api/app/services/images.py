@@ -20,7 +20,7 @@ def _has_forbidden_char(text: str) -> bool:
     )
 
 
-def _public_host(host: str) -> str | None:
+def public_host(host: str) -> str | None:
     """The host as stored (lowercase; IDN converted to punycode), or None when it is not a plain public
     DNS name or public IP literal. Local and private targets are refused: the reader's browser would
     request them on the reader's own network."""
@@ -29,7 +29,7 @@ def _public_host(host: str) -> str | None:
             ip = ipaddress.ip_address(host)
         except ValueError:
             return None
-        return host if _is_public_ip(ip) else None
+        return host if is_public_ip(ip) else None
     try:
         host = host.encode("idna").decode("ascii") if not host.isascii() else host
     except UnicodeError:
@@ -46,11 +46,11 @@ def _public_host(host: str) -> str | None:
             ip = ipaddress.ip_address(host)
         except ValueError:
             return None
-        return host if _is_public_ip(ip) else None
+        return host if is_public_ip(ip) else None
     return host
 
 
-def _is_public_ip(ip) -> bool:
+def is_public_ip(ip) -> bool:
     if getattr(ip, "ipv4_mapped", None) is not None:
         ip = ip.ipv4_mapped
     return ip.is_global and not ip.is_multicast
@@ -80,7 +80,7 @@ def validate_image_url(raw: object, base: str | None = None) -> str | None:
         port = parts.port  # raises ValueError on a malformed or out-of-range port
         if port == 0:
             return None
-        host = _public_host(parts.hostname)
+        host = public_host(parts.hostname)
         if host is None:
             return None
         netloc = f"[{host}]" if ":" in host else host
