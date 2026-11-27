@@ -110,7 +110,7 @@ Pas de mot de passe : l'utilisateur saisit son e-mail, reçoit un lien à usage 
 
 1. Le front appelle `POST /api/auth/magic-link {email}` (toujours `202`, que le compte existe ou non).
 2. L'e-mail contient `{APP_BASE_URL}/connexion?token=…`. La page `/connexion` du front lit `token` et appelle `POST /api/auth/verify {token}` : `200 {email}` et cookie de session `httpOnly`, `SameSite=Lax` (`Secure` avec `COOKIE_SECURE=true`). Le compte est créé au premier lien vérifié.
-3. Ensuite `GET /api/me` et `POST /api/auth/logout`. (V2, à venir : un brouillon de une peut accompagner la demande de lien et être fusionné à la vérification.)
+3. Ensuite `GET /api/me` et `POST /api/auth/logout`. Un brouillon de une (`draft`) peut accompagner la demande de lien ; il est fusionné dans la une du compte à la vérification si l'édition est ouverte.
 
 Le front envoie ses requêtes avec `credentials: "include"` ; derrière le service `web` tout passe par la même origine, `CORS_ORIGINS` ne sert que pour `npm run dev` (5173).
 

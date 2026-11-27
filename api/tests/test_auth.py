@@ -57,7 +57,7 @@ def test_magic_link_mail_failure_is_invisible(api, mails):
 def test_verify_success_sets_cookie_and_creates_account(api, mails, session):
     ask(api)
     r = api.post("/api/auth/verify", json={"token": mails.last_token()})
-    assert (r.status_code, r.json()) == (200, {"email": "a@example.org"})
+    assert (r.status_code, r.json()) == (200, {"email": "a@example.org", "draft": None})
     cookie = r.headers["set-cookie"].lower()
     assert f"{SESSION_COOKIE}=" in cookie
     assert "httponly" in cookie and "samesite=lax" in cookie and "path=/" in cookie

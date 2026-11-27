@@ -1,13 +1,15 @@
 import logging
 
+from datetime import datetime
+
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 
 from app.db import get_session
-from app.deps import SESSION_COOKIE, client_ip, current_account, session_token
+from app.deps import SESSION_COOKIE, clock, client_ip, current_account, session_token
 from app.models.entities import Account
-from app.schemas import EmailOut, MagicLinkRequest, VerifyRequest
-from app.services import auth
+from app.schemas import DraftResult, EmailOut, MagicLinkRequest, VerifyOut, VerifyRequest
+from app.services import auth, une
 from app.services.ratelimit import RateLimiter, email_key, enforce, get_rate_limiter
 from app.services.mailer import Mailer, get_mailer, login_message
 from config.settings import get_settings
@@ -40,31 +42,49 @@ def magic_link(
     enforce(limiter, f"magic-link:ip:{client_ip(request)}", settings.rate_limit_magic_link_per_ip, window)
     enforce(limiter, f"magic-link:email:{email_key(body.email)}", settings.rate_limit_magic_link_per_email, window)
     auth.purge_expired(db)  # login_tokens hold e-mail addresses: do not wait for a successful verify
-    token = auth.create_login_token(db, body.email)
+    token = auth.create_login_token(db, body.email, draft_topic_ids=body.draft.topic_ids if body.draft else None)
     background.add_task(
         _send_login_email, mailer, body.email, auth.login_link(token), settings.login_token_ttl_minutes
     )
     return {}
 
 
-@router.post("/auth/verify", response_model=EmailOut)
+@router.post("/auth/verify", response_model=VerifyOut)
 def verify(
     request: Request,
     body: VerifyRequest,
     response: Response,
     db: Session = Depends(get_session),
     limiter: RateLimiter = Depends(get_rate_limiter),
+    at: datetime = Depends(clock),
 ):
     settings = get_settings()
     enforce(limiter, f"verify:ip:{client_ip(request)}", settings.rate_limit_verify_per_ip, settings.rate_limit_window_seconds)
-    email = auth.consume_login_token(db, body.token)
-    if email is None:
+    consumed = auth.consume_login_token(db, body.token)
+    if consumed is None:
         raise HTTPException(status_code=400, detail="Lien de connexion invalide ou expiré")
+    email, draft_topic_ids = consumed
     account = auth.get_or_create_account(db, email)
     token, lifetime = auth.create_session(db, account)
     auth.purge_expired(db)
     response.set_cookie(SESSION_COOKIE, token, **_cookie_attrs(max_age=lifetime))
-    return EmailOut(email=account.email)
+    return VerifyOut(email=account.email, draft=_merge_draft(db, account, draft_topic_ids, at))
+
+
+def _merge_draft(db: Session, account: Account, topic_ids: list[int], at: datetime) -> DraftResult | None:
+    """Merge the draft into the account's une if the edition is open (same rule as /me/une/merge).
+    Never fails the login, never logs the draft."""
+    if not topic_ids:
+        return None
+    try:
+        result = une.merge(db, account.id, topic_ids, at)
+    except une.UneClosed:
+        return None  # closed edition: the draft is dropped, nothing is written
+    except Exception:
+        logger.error("Échec de la fusion du brouillon", exc_info=False)
+        db.rollback()
+        return None
+    return DraftResult(added=result.added, ignored=result.ignored)
 
 
 @router.post("/auth/logout", status_code=204)

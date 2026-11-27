@@ -94,6 +94,16 @@ class EmailOut(BaseModel):
     email: str
 
 
+class DraftResult(BaseModel):
+    added: int
+    ignored: int
+
+
+class VerifyOut(BaseModel):
+    email: str
+    draft: DraftResult | None
+
+
 class AdminLoginRequest(BaseModel):
     password: str = Field(max_length=1024)
 
