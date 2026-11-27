@@ -66,8 +66,9 @@ export default function LoginPage() {
         return;
       }
       await qc.cancelQueries({ queryKey: meKey });
+      // La une en cache peut être celle d'un autre compte : on l'oublie, la fusion attend son rechargement.
+      qc.removeQueries({ queryKey: uneKey });
       qc.setQueryData(meKey, { email: user.email });
-      void qc.invalidateQueries({ queryKey: uneKey });
       // Le brouillon local n'est pas touché ici : la page /composer fusionne ce qui n'est pas déjà dans la une.
       setPhase({ kind: "done", message: doneMessage(user.draft) });
     })();

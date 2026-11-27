@@ -7,6 +7,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { AppRoutes } from "../App";
 import { bodiesOf, res, stubFetch, type Handler } from "../test/api-stub";
+import { uneKey } from "../api/hooks";
 import { makeQueryClient } from "../test/utils";
 
 const EMAIL = "marie@example.org";
@@ -120,6 +121,21 @@ describe("Vérification du lien", () => {
     renderLogin("/connexion?token=t");
     await screen.findByText(/2 sujets ont été ajoutés/);
     expect(draftStore.get().ids).toEqual([4, 5, 8]);
+  });
+
+  it("oublie la une en cache (autre compte) à la connexion", async () => {
+    const client = makeQueryClient();
+    client.setQueryData(uneKey, { edition_date: "2026-11-27", closes_at: "x", open: true, topic_ids: [1] });
+    session({ "POST /api/auth/verify": () => res(200, { email: EMAIL, draft: null }) });
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter initialEntries={["/connexion?token=t"]}>
+          <AppRoutes />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    await screen.findByText("Vous êtes connecté·e.");
+    expect(client.getQueryData(uneKey)).toBeUndefined();
   });
 
   it("sans brouillon joint : le brouillon local reste (fusion proposée sur /composer)", async () => {

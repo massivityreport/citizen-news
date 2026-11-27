@@ -58,7 +58,9 @@ export function useComposition(meta: EditionMeta | undefined, poolIds?: Readonly
   const unData = mode === "server" ? une.data : undefined;
   const editionDate = unData?.edition_date ?? meta?.edition_date ?? null;
   const closesAt = unData?.closes_at ?? meta?.closes_at ?? null;
-  const localIds = draft.editionDate && meta && draft.editionDate !== meta.edition_date ? [] : draft.ids;
+  // Un brouillon d'une autre édition que celle de la une affichée est ignoré (aussi en mode serveur).
+  const draftStale = draft.editionDate !== null && editionDate !== null && draft.editionDate !== editionDate;
+  const localIds = draftStale ? [] : draft.ids;
   const ids = mode === "server" ? (unData?.topic_ids ?? []) : mode === "local" ? localIds : [];
   const closed = unData?.open === false || meta?.open === false || (editionDate !== null && closedFor === editionDate);
   const ready = mode === "local" || (mode === "server" && une.isSuccess);
@@ -153,41 +155,55 @@ export function useComposition(meta: EditionMeta | undefined, poolIds?: Readonly
 
   const merging = useRef(false);
   const [mergeBusy, setMergeBusy] = useState(false);
-  const [mergeFailed, setMergeFailed] = useState(false);
-  const [mergeNote, setMergeNote] = useState<string | null>(null);
+  const email = me.data?.email ?? null;
+  // Message et échec sont attachés au compte qui les a produits : ils disparaissent au changement de compte ou à la déconnexion.
+  const [mergeFailedFor, setMergeFailed] = useState<string | null>(null);
+  const [mergeNoteFor, setMergeNote] = useState<{ email: string; text: string } | null>(null);
+  const mergeFailed = email !== null && mergeFailedFor === email;
+  const mergeNote = email !== null && mergeNoteFor?.email === email ? mergeNoteFor.text : null;
 
   /**
    * POST /api/me/une/merge avec le brouillon local (sans ce qui est déjà dans la une), puis vide le brouillon
    * SEULEMENT après succès. Un seul appel à la fois (double clic, StrictMode) ; en cas d'échec, le brouillon reste.
+   * Si la page est démontée pendant l'envoi, le brouillon n'est pas vidé ; un rejeu ne duplique rien : le serveur
+   * ignore les doublons (le merge est idempotent).
    */
   const mergeDraft = useCallback(async (): Promise<Result> => {
     if (merging.current) return { outcome: "unavailable" };
     const d = draftStore.get();
-    const inUne = qc.getQueryData<Une>(uneKey)?.topic_ids ?? [];
-    const toMerge = d.ids.filter((id) => !inUne.includes(id));
+    // La une doit venir d'une requête réussie et à jour (pas en cours de rafraîchissement) pour ce compte.
+    const state = qc.getQueryState<Une>(uneKey);
+    const base = qc.getQueryData<Une>(uneKey);
+    if (!email || !base || state?.status !== "success" || state.fetchStatus !== "idle") return { outcome: "unavailable" };
+    if (d.editionDate !== null && d.editionDate !== base.edition_date) {
+      draftStore.clear(); // brouillon d'une autre édition : jamais fusionné
+      return { outcome: "absent" };
+    }
+    const toMerge = d.ids.filter((id) => !base.topic_ids.includes(id));
     if (toMerge.length === 0) {
-      draftStore.clear(); // rien à fusionner : tout est déjà dans la une
+      draftStore.clear(); // rien à fusionner : tout est déjà dans la une (à jour)
       return { outcome: "absent" };
     }
     merging.current = true;
     setMergeBusy(true);
-    setMergeFailed(false);
+    setMergeFailed(null);
     try {
       const res = await api.uneMerge(toMerge);
       qc.setQueryData(uneKey, res.une);
       draftStore.clear();
       const n = res.added;
       const g = res.ignored;
-      setMergeNote(
-        `${n} sujet${n > 1 ? "s ajoutés" : " ajouté"} à votre une${g > 0 ? `, ${g} ignoré${g > 1 ? "s" : ""} (une complète ou sujet plus au bassin)` : ""}.`,
-      );
+      setMergeNote({
+        email,
+        text: `${n} sujet${n > 1 ? "s ajoutés" : " ajouté"} à votre une${g > 0 ? `, ${g} ignoré${g > 1 ? "s" : ""} (une complète ou sujet plus au bassin)` : ""}.`,
+      });
       return { outcome: "added" };
     } catch (e) {
       if (e instanceof ApiError && e.status === 409 && CLOSED_RE.test(e.message)) {
         setClosedFor(qc.getQueryData<Une>(uneKey)?.edition_date ?? null);
         return { outcome: "closed", message: e.message };
       }
-      setMergeFailed(true);
+      setMergeFailed(email);
       if (e instanceof ApiError && e.status === 401) {
         qc.setQueryData(meKey, null);
         return { outcome: "unauthorized", message: e.message };
@@ -197,21 +213,27 @@ export function useComposition(meta: EditionMeta | undefined, poolIds?: Readonly
       merging.current = false;
       setMergeBusy(false);
     }
-  }, [qc]);
+  }, [qc, email]);
 
   // Fusion automatique, une fois par connexion (par e-mail) : jamais deux envois, même en StrictMode.
-  const email = me.data?.email ?? null;
   const autoFor = useRef<string | null>(null);
-  const hasDraft = draft.ids.length > 0;
+  const hasDraft = localIds.length > 0;
+  const settled = une.isSuccess && !une.isFetching;
   useEffect(() => {
     if (mode !== "server") {
       autoFor.current = null;
       return;
     }
-    if (!ready || closed || !email || !hasDraft || autoFor.current === email) return;
+    if (!settled || closed || !email || autoFor.current === email) return;
+    if (draftStale) {
+      draftStore.clear();
+      return;
+    }
+    if (!hasDraft) return;
     autoFor.current = email;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- envoi réseau déclenché une fois ; l'état « en cours » suit
     void mergeDraft();
-  }, [mode, ready, closed, email, hasDraft, mergeDraft]);
+  }, [mode, settled, closed, email, hasDraft, draftStale, mergeDraft]);
 
   return {
     mode,

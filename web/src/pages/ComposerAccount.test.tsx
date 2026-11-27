@@ -177,6 +177,46 @@ describe("Composer : fusion automatique du brouillon local", () => {
   });
 });
 
+describe("Fusion : garde-fous", () => {
+  const MERGE = "POST /api/me/une/merge";
+
+  it("un brouillon d'une autre édition est ignoré et vidé, jamais fusionné", async () => {
+    draftStore.set({ editionDate: "2026-11-26", ids: [2, 3] });
+    const fn = mount({ une: une([1]) });
+    await heading(1);
+    await waitFor(() => expect(draftStore.get().ids).toEqual([]));
+    expect(bodiesOf(fn, MERGE)).toEqual([]);
+    expect(screen.getByRole("progressbar", { name: "1/10 sujets" })).toBeInTheDocument();
+  });
+
+  it("ne vide rien tant que la une du compte n'est pas chargée", async () => {
+    draftStore.set({ editionDate: "2026-11-27", ids: [1] });
+    let release: (r: Response) => void = () => {};
+    mount({ routes: { "GET /api/me/une": () => new Promise<Response>((r) => (release = r)) } });
+    await heading(1);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(draftStore.get().ids).toEqual([1]);
+    release(res(200, une([1])));
+    await waitFor(() => expect(draftStore.get().ids).toEqual([]));
+  });
+
+  it("le message de fusion disparaît à la déconnexion", async () => {
+    draftStore.set({ editionDate: "2026-11-27", ids: [2] });
+    mount({
+      une: une([]),
+      routes: {
+        [MERGE]: () => res(200, { added: 1, ignored: 0, une: une([2]) }),
+        "POST /api/auth/logout": () => res(204),
+      },
+    });
+    await heading(1);
+    expect(await screen.findByText(/1 sujet ajouté à votre une/)).toBeInTheDocument();
+    await click("Se déconnecter");
+    await waitFor(() => expect(screen.queryByText(/1 sujet ajouté à votre une/)).not.toBeInTheDocument());
+    expect(screen.getByText("Non enregistrée")).toBeInTheDocument();
+  });
+});
+
 describe("Sujet de la une absent du bassin", () => {
   it("le dit clairement et permet de le retirer", async () => {
     mount({ une: une([99]), routes: { "DELETE /api/me/une/topics/99": () => res(200, une([])) } });
