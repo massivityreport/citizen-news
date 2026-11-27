@@ -197,6 +197,24 @@ Ré-ajouter l'URL d'une source supprimée définitivement est permis ; elle quit
 
 **Suppression** : les articles partent en cascade, l'URL est mémorisée dans `deleted_sources` pour que l'initialisation depuis `feeds.yaml` ne recrée pas la source. Un sujet qui perd des articles n'est pas supprimé (ses votes sont conservés) : s'il lui reste moins de médias distincts que le minimum pour la une, ou plus aucun article, il n'apparaît plus sur la une ni dans le flux de vote ; son titre et son résumé ne changent qu'au prochain regroupement qui lui rattache un article : un sujet mixte garde donc, après la suppression, un titre calculé avec l'ancien article.
 
+### Statistiques (`GET /api/admin/stats`)
+
+Page d'accueil du backoffice. Derrière la session admin (`401` sinon, y compris avec une session citoyenne). **Comptes agrégés uniquement** : ni identifiant de compte, ni adresse. Réponse :
+
+```json
+{
+  "last_24h": {"articles": 12, "votes": 40, "voters": 9},
+  "total":    {"articles": 1830, "votes": 5120, "voters": 410},
+  "series": [{"date": "2026-10-29", "articles": 7, "votes": 31, "voters": 8}, …]
+}
+```
+
+- **Fenêtre « 24 h »** : glissante, `[maintenant − 24 h, maintenant]` (bornes incluses), horloge du serveur (injectable dans les tests).
+- **Articles** : comptés selon la date d'**ingestion** (`articles.fetched_at`, posée à l'insertion, jamais modifiée), pas la date de publication. **Votes** : date de création du vote (`votes.created_at`) ; un vote modifié plus tard garde sa date. **Votants** : comptes distincts (`count(distinct account_id)`), sur 24 h et au total.
+- **`series`** : exactement 30 entrées, un jour UTC chacune, de J−29 à aujourd'hui **compris** (aujourd'hui est une journée UTC partielle), ordre croissant, jours vides à `0`. Même convention de jours que la courbe de votes d'un sujet (`date_trunc('day')` en UTC). Les éléments plus anciens ne figurent pas dans la série mais sont comptés dans `total`.
+- **`voters` par jour n'est pas cumulable** : c'est le nombre de comptes distincts ayant voté ce jour-là. Un compte qui vote lundi et mardi compte pour 1 chaque jour ; la somme des jours dépasse `total.voters`. Un compte qui vote sur plusieurs sujets le même jour compte pour 1 votant et n votes.
+- Calculé en base par 5 requêtes agrégées (nombre constant, quel que soit le volume) ; index `ix_articles_fetched_at` et `ix_votes_created_at` (migration 0008).
+
 ### Articles, sujets et votes (lecture seule)
 
 Routes sous `/api/admin`, toutes derrière la session admin (`401` sinon, y compris avec une session citoyenne). **Aucune réponse ne contient d'adresse e-mail, de hash ni de donnée personnelle** : un vote est `{date, choix, numéro de compte}`, le numéro étant l'`id` du compte (un test parcourt les réponses et échoue si une adresse y apparaît).
