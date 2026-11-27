@@ -43,13 +43,13 @@ export function ReviewPanel({
           const id = ids[i];
           if (id === undefined)
             return (
-              <li key={i} className={styles.item} data-free="true">
+              <li key={`libre-${i}`} className={styles.item} data-free="true">
                 Place {i + 1} : Place libre
               </li>
             );
           const t = topics.get(id);
           return (
-            <li key={id} className={styles.item}>
+            <li key={`place-${id}`} className={styles.item}>
               <h3>
                 <span>Place {i + 1} : </span>
                 {t ? t.title : "Sujet qui n’est plus disponible"}
@@ -57,11 +57,11 @@ export function ReviewPanel({
               {t?.summary && <p>{t.summary}</p>}
               {!closed && (
                 <div className={styles.itemActions}>
-                  <button type="button" className={`${styles.btn} ${styles.btnLight}`} onClick={() => onRemove(id)}>
-                    Retirer<span className={styles.srOnly}> {t?.title ?? `la place ${i + 1}`}</span>
+                  <button type="button" className={`${styles.btn} ${styles.btnLight}`} onClick={() => onRemove(id)} aria-label={`Retirer ${t?.title ?? `la place ${i + 1}`}`}>
+                    Retirer
                   </button>
-                  <button type="button" className={`${styles.btn} ${styles.btnLight}`} onClick={() => onReplace(id, i + 1)}>
-                    Remplacer<span className={styles.srOnly}> {t?.title ?? `la place ${i + 1}`}</span>
+                  <button type="button" className={`${styles.btn} ${styles.btnLight}`} onClick={() => onReplace(id, i + 1)} aria-label={`Remplacer ${t?.title ?? `la place ${i + 1}`}`}>
+                    Remplacer
                   </button>
                 </div>
               )}

@@ -234,8 +234,9 @@ export default function ComposerPage() {
   return (
     <div className={styles.page}>
       <div className={styles.top}>
+        <p className={styles.eyebrow}>Citizen News</p>
         <h1 ref={h1} tabIndex={-1}>
-          Citizen News <span className={styles.sub}>· ma une du jour</span>
+          Composer ma une
         </h1>
         <p className={styles.closes}>
           {closes ? (
@@ -248,8 +249,8 @@ export default function ComposerPage() {
         </p>
         <div className={styles.gaugeRow}>
           <Gauge count={comp.ids.length} />
-          <span className={styles.pill} data-saved={comp.saved ? "true" : "false"}>
-            {comp.saved ? (comp.saving ? "Enregistrement…" : "Enregistrée") : "Non enregistrée"}
+          <span className={styles.pill} data-saved={comp.saved && comp.ready ? "true" : "false"}>
+            {comp.mode === "loading" || (comp.saved && !comp.ready) ? "Chargement…" : comp.saved ? (comp.saving ? "Enregistrement…" : "Enregistrée") : "Non enregistrée"}
           </span>
         </div>
       </div>

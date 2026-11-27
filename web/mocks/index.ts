@@ -7,7 +7,23 @@ const json = (status: number, body?: unknown, headers?: Record<string, string>) 
     headers: { "Content-Type": "application/json", ...headers },
   });
 
-type Body = { email?: string; token?: string } | undefined;
+type Body = { email?: string; token?: string; topic_ids?: number[] } | undefined;
+
+const CLOSES = () => new Date(Date.now() + 2 * 3_600_000).toISOString();
+const topicCards = Array.from({ length: 14 }, (_, i) => ({
+  id: i + 1,
+  title: `Sujet de démonstration n° ${i + 1}`,
+  summary: `Résumé court et factuel du sujet n° ${i + 1}.`,
+  sources: [
+    { name: "Le Monde", url: "https://example.org/a", title: `Article A${i + 1}`, published_at: new Date(Date.now() - i * 3_600_000).toISOString() },
+    { name: "Ouest-France", url: "https://example.org/b", title: `Article B${i + 1}`, published_at: new Date(Date.now() - i * 3_000_000).toISOString() },
+  ],
+  article_count: 2 + (i % 5),
+  source_count: 2 + (i % 4),
+  first_seen_at: new Date(Date.now() - (i + 3) * 3_600_000).toISOString(),
+  updated_at: new Date(Date.now() - i * 1_800_000).toISOString(),
+  image_url: null,
+}));
 
 /**
  * Simule l'API en interceptant fetch pour les URL /api/*.
@@ -16,6 +32,8 @@ type Body = { email?: string; token?: string } | undefined;
 export function installMocks() {
   const realFetch = window.fetch.bind(window);
   let session: string | null = null;
+  let uneIds: number[] = [];
+  const uneBody = () => ({ edition_date: new Date().toISOString().slice(0, 10), closes_at: CLOSES(), open: true, topic_ids: uneIds });
 
   async function handle(method: string, url: URL, body: Body): Promise<Response> {
     const path = url.pathname.replace(/^\/api/, "");
@@ -56,10 +74,41 @@ export function installMocks() {
       case "POST /auth/logout":
         session = null;
         return json(204);
+      case "GET /topics/pool": {
+        const tab = url.searchParams.get("tab") ?? "random";
+        let items = [...topicCards];
+        if (tab === "random") {
+          const seed = url.searchParams.get("seed") ?? "";
+          if (seed.length < 8) return json(422, { detail: "Graine invalide." });
+          const h = (id: number) => [...`${seed}:${id}`].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7);
+          items.sort((a, b) => h(a.id) - h(b.id));
+        } else if (tab === "radar") items = items.filter((t) => t.source_count <= 3);
+        return json(200, { edition_date: uneBody().edition_date, closes_at: CLOSES(), open: true, total: items.length, items });
+      }
+      case "GET /me/une":
+        return session ? json(200, uneBody()) : json(401, { detail: "Non connecté." });
+      case "POST /me/une/merge": {
+        if (!session) return json(401, { detail: "Non connecté." });
+        const before = uneIds.length;
+        for (const id of body?.topic_ids ?? []) if (uneIds.length < 10 && !uneIds.includes(id) && id <= 14) uneIds.push(id);
+        const added = uneIds.length - before;
+        return json(200, { added, ignored: (body?.topic_ids?.length ?? 0) - added, une: uneBody() });
+      }
       case "GET /me":
         return session ? json(200, { email: session }) : json(401, { detail: "Non connecté." });
       default: {
         const m = /^GET \/editions\/(\d{4}-\d{2}-\d{2})$/.exec(route);
+        const t = /^(PUT|DELETE) \/me\/une\/topics\/(\d+)$/.exec(route);
+        if (t) {
+          if (!session) return json(401, { detail: "Non connecté." });
+          const id = Number(t[2]);
+          if (t[1] === "DELETE") uneIds = uneIds.filter((x) => x !== id);
+          else if (!uneIds.includes(id)) {
+            if (uneIds.length >= 10) return json(409, { detail: "Votre une est complète" });
+            uneIds.push(id);
+          }
+          return json(200, uneBody());
+        }
         const found = m && editions.find((e) => e.date === m[1]);
         if (found) return json(200, found);
         if (m) return json(404, { detail: "Édition introuvable." });
