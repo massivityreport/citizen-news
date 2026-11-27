@@ -8,8 +8,12 @@ import type {
   CurrentEdition,
   Edition,
   EditionSummary,
+  MergeResult,
   Me,
   Page,
+  Pool,
+  PoolTab,
+  Une,
   VerifyResult,
 } from "./types";
 
@@ -100,6 +104,17 @@ export const api = {
   edition: (date: string) => request<Edition>(`/editions/${encodeURIComponent(date)}`),
 
   editions: (limit = 30) => request<{ items: EditionSummary[] }>(`/editions?limit=${limit}`),
+
+  pool: (tab: PoolTab, seed?: string) => request<Pool>(`/topics/pool${query({ tab, seed: seed ?? "" })}`),
+
+  une: () => request<Une>("/me/une"),
+
+  uneAdd: (id: number) => request<Une>(`/me/une/topics/${id}`, { method: "PUT" }),
+
+  uneRemove: (id: number) => request<Une>(`/me/une/topics/${id}`, { method: "DELETE" }),
+
+  uneMerge: (topicIds: number[]) =>
+    request<MergeResult>("/me/une/merge", { method: "POST", body: { topic_ids: topicIds } }),
 
   magicLink: (email: string, draft?: { topic_ids: number[] }) =>
     request<void>("/auth/magic-link", { method: "POST", body: draft ? { email, draft } : { email } }),

@@ -19,6 +19,31 @@ export interface TopicCard {
   image_url: string | null;
 }
 
+export type PoolTab = "random" | "recent" | "radar";
+
+/** Bassin du jour (contrat V2). `items` : 300 au plus, sans pagination. */
+export interface Pool {
+  edition_date: string;
+  closes_at: string;
+  open: boolean;
+  total: number;
+  items: TopicCard[];
+}
+
+/** Une personnelle de l'édition en cours (sans compteur), contrat V2. */
+export interface Une {
+  edition_date: string;
+  closes_at: string;
+  open: boolean;
+  topic_ids: number[];
+}
+
+export interface MergeResult {
+  added: number;
+  ignored: number;
+  une: Une;
+}
+
 /** Sujet figé d'une édition publiée. `topic_id` peut être null (sujet supprimé depuis). */
 export interface EditionTopic {
   rank: number;
