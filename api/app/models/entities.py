@@ -79,6 +79,7 @@ class Article(Base):
     __table_args__ = (
         Index("ix_articles_published_at", "published_at"),
         Index("ix_articles_topic_id", "topic_id"),
+        Index("ix_articles_source_id", "source_id"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)

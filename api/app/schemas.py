@@ -122,3 +122,127 @@ class AdminSourceOut(BaseModel):
 class AdminSourceDeleted(BaseModel):
     id: int
     deleted_articles: int
+
+
+# --- Back office: articles, topics, votes (read only; never any personal data) ---
+
+
+class AdminSourceRef(BaseModel):
+    id: int
+    name: str
+    active: bool
+
+
+class AdminTopicRef(BaseModel):
+    id: int
+    title: str
+
+
+class AdminArticleOut(BaseModel):
+    id: int
+    title: str
+    url: str
+    source: AdminSourceRef
+    published_at: datetime | None
+    fetched_at: datetime
+    topic: AdminTopicRef | None
+    grouped: bool
+
+
+class AdminArticlePage(BaseModel):
+    items: list[AdminArticleOut]
+    total: int
+    page: int
+    page_size: int
+
+
+TopicState = Literal["new", "active", "reserve", "emerged"]
+VoteChoiceName = Literal["more", "not_priority", "unknown"]
+
+
+class AdminTopicRow(BaseModel):
+    id: int
+    title: str
+    state: TopicState
+    wave: int
+    state_changed_at: datetime | None
+    article_count: int
+    source_count: int
+    vote_count: int
+    image_url: str | None
+
+
+class AdminTopicPage(BaseModel):
+    items: list[AdminTopicRow]
+    total: int
+    page: int
+    page_size: int
+
+
+class AdminVoteOut(BaseModel):
+    date: datetime
+    choice: VoteChoiceName
+    account_id: int  # the account number: never an e-mail address nor anything personal
+
+
+class AdminVotePage(BaseModel):
+    items: list[AdminVoteOut]
+    total: int
+    page: int
+    page_size: int
+
+
+class AdminSupportOut(BaseModel):
+    score: float
+    level: Literal["low", "medium", "high"]
+    votes_count: int
+
+
+class AdminFrontOut(BaseModel):
+    on_front: bool
+    reason: ReasonOut | None
+
+
+class AdminVoteDay(BaseModel):
+    date: str  # YYYY-MM-DD, UTC
+    more: int
+    not_priority: int
+    unknown: int
+    total: int
+
+
+class AdminVoteSummary(BaseModel):
+    more: int
+    not_priority: int
+    unknown: int
+    total: int
+    voters: int
+    first_vote_at: datetime | None
+    daily: list[AdminVoteDay]
+
+
+class AdminTopicArticle(BaseModel):
+    id: int
+    title: str
+    url: str
+    source: AdminSourceRef
+    published_at: datetime | None
+
+
+class AdminTopicDetail(BaseModel):
+    id: int
+    title: str
+    summary: str
+    state: TopicState
+    wave: int
+    first_seen_at: datetime
+    updated_at: datetime
+    state_changed_at: datetime | None
+    evaluated_at: datetime | None
+    article_count: int
+    source_count: int
+    support: AdminSupportOut
+    front: AdminFrontOut
+    votes: AdminVoteSummary
+    articles: list[AdminTopicArticle]
+    articles_truncated: bool
