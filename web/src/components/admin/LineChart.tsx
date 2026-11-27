@@ -17,7 +17,7 @@ interface Props {
   series: ChartSeries[];
   /** Titre lu par les lecteurs d’écran (<title> du SVG). */
   title: string;
-  /** Légende de l’axe vertical, par ex. « Votes par jour ». */
+  /** Légende de l’axe vertical, par ex. « Articles par jour ». */
   yLabel?: string;
   /** Texte affiché quand aucune série n’a de point. */
   emptyText?: string;
@@ -46,7 +46,7 @@ export function niceStep(max: number, count = 4): number {
   const raw = Math.max(max, 1) / count;
   const pow = 10 ** Math.floor(Math.log10(raw));
   const f = raw / pow;
-  return Math.max(1, (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * pow); // des votes : graduations entières
+  return Math.max(1, (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * pow); // des effectifs : graduations entières
 }
 
 /** Jusqu’à 31 points : un marqueur par point. Au-delà : environ 10 marqueurs régulièrement espacés (et le dernier), pour que la forme de la série reste visible. */

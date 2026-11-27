@@ -63,3 +63,9 @@
 .stats dd small { font-weight: 400; font-size: .8rem; color: var(--c-muted); display: block; }
 .section h2 { margin: 0; font-size: 1.2rem; }
 .num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* Aperçu de la une */
+.previewBanner { margin: 0; padding: .8rem 1rem; background: #fff3cd; color: #4d3800; border: 2px solid #8a5a00; border-radius: var(--radius); }
+.ties { margin: 0; padding: 0; list-style: none; display: grid; gap: 1rem; }
+.cutAlert { margin: 0 0 .5rem; padding: .6rem .8rem; background: #fde7e4; color: #8a1c12; border: 2px solid #b42318; border-radius: var(--radius); font-weight: 700; }
+.cut { display: flex; align-items: center; gap: .8rem; color: var(--c-muted); font-weight: 700; border-top: 3px dashed var(--c-muted); padding-top: .4rem; }

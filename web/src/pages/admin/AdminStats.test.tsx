@@ -13,35 +13,37 @@ const series = (f: (i: number) => number) =>
   Array.from({ length: 30 }, (_, i) => ({
     date: new Date(Date.UTC(2026, 9, 29 + i)).toISOString().slice(0, 10),
     articles: f(i),
-    votes: f(i) * 2,
-    voters: f(i),
+    participants: f(i),
+    selections: f(i) * 2,
   }));
 const stats = (over: Partial<AdminStats> = {}): AdminStats => ({
-  last_24h: { articles: 1234, votes: 56, voters: 7 },
-  total: { articles: 1234567, votes: 8901, voters: 234 },
+  last_24h: { articles: 1234, participants: 56, selections: 7 },
+  total: { articles: 1234567, participants: 8901, selections: 234 },
   series: series((i) => i),
   ...over,
 });
 const open = () => renderWithProviders(<AppRoutes />, "/admin");
 
 describe("accueil du backoffice", () => {
-  it("tuiles avec séparateurs de milliers et trois courbes", async () => {
+  it("tuiles avec séparateurs de milliers, participants et unes, trois courbes", async () => {
     stubFetch({ ...ME, "GET /api/admin/stats": () => res(200, stats()) });
     open();
     const tile = async (label: string) => (await screen.findByText(label)).closest("div")!;
     expect(within(await tile("Articles (24 h)")).getByText(/^1\s234$/)).toBeInTheDocument();
     expect(within(await tile("Articles (total)")).getByText(/^1\s234\s567$/)).toBeInTheDocument();
-    expect(within(await tile("Votes (24 h)")).getByText("56")).toBeInTheDocument();
-    expect(within(await tile("Votes (total)")).getByText(/^8\s901$/)).toBeInTheDocument();
-    expect(within(await tile("Votants (24 h)")).getByText("7")).toBeInTheDocument();
-    expect(within(await tile("Votants (total)")).getByText("234")).toBeInTheDocument();
+    expect(within(await tile("Participants (24 h)")).getByText("56")).toBeInTheDocument();
+    expect(within(await tile("Participants (total)")).getByText(/^8\s901$/)).toBeInTheDocument();
+    expect(within(await tile("Unes enregistrées (24 h)")).getByText("7")).toBeInTheDocument();
+    expect(within(await tile("Unes enregistrées (total)")).getByText("234")).toBeInTheDocument();
     expect(screen.getAllByRole("img")).toHaveLength(3);
-    expect(screen.getByRole("img", { name: /Votants distincts par jour/ })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: /Participants par jour/ })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: /Unes enregistrées par jour/ })).toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/vote|votant/i);
     expect(screen.getByText(/on ne peut pas additionner les jours/)).toBeInTheDocument();
   });
 
   it("série vide : tuiles à 0 et message en français", async () => {
-    const zero = { articles: 0, votes: 0, voters: 0 };
+    const zero = { articles: 0, participants: 0, selections: 0 };
     stubFetch({ ...ME, "GET /api/admin/stats": () => res(200, stats({ last_24h: zero, total: zero, series: series(() => 0) })) });
     open();
     expect((await screen.findAllByText("Aucune donnée sur les 30 derniers jours.")).length).toBeGreaterThanOrEqual(3);
@@ -61,7 +63,7 @@ describe("accueil du backoffice", () => {
 
   it("« Actualiser » recharge les chiffres", async () => {
     let n = 0;
-    stubFetch({ ...ME, "GET /api/admin/stats": () => res(200, stats({ last_24h: { articles: ++n, votes: 0, voters: 0 } })) });
+    stubFetch({ ...ME, "GET /api/admin/stats": () => res(200, stats({ last_24h: { articles: ++n, participants: 0, selections: 0 } })) });
     open();
     const tile = async () => (await screen.findByText("Articles (24 h)")).closest("div")!;
     expect(within(await tile()).getByText("1")).toBeInTheDocument();

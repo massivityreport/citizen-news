@@ -35,7 +35,7 @@ const article = (id: number, over: Partial<AdminArticle> = {}): AdminArticle => 
   ...over,
 });
 const topicRow = (id: number, title: string): AdminTopicRow => ({
-  id, title, state: "active", wave: 1, state_changed_at: null, article_count: 1, source_count: 1, vote_count: 0, image_url: null,
+  id, title, article_count: 1, source_count: 1, updated_at: "2026-11-03T10:00:00Z", approvals: 0,
 });
 const SOURCES: AdminSource[] = [
   { id: 1, name: "Alpha", feed_url: "https://a.example/rss", active: true, article_count: 3, last_article_at: null },

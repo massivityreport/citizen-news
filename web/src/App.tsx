@@ -16,6 +16,9 @@ const AdminSourcesPage = lazy(() => import("./pages/admin/AdminSourcesPage"));
 const AdminArticlesPage = lazy(() => import("./pages/admin/AdminArticlesPage"));
 const AdminTopicsPage = lazy(() => import("./pages/admin/AdminTopicsPage"));
 const AdminTopicDetailPage = lazy(() => import("./pages/admin/AdminTopicDetailPage"));
+const AdminEditionsPage = lazy(() => import("./pages/admin/AdminEditionsPage"));
+const AdminEditionDetailPage = lazy(() => import("./pages/admin/AdminEditionDetailPage"));
+const AdminPreviewPage = lazy(() => import("./pages/admin/AdminPreviewPage"));
 const NotFoundPage = lazy(() => import("./pages/NotFoundPage"));
 
 export function AppRoutes() {
@@ -28,6 +31,9 @@ export function AppRoutes() {
           <Route path="articles" element={<AdminArticlesPage />} />
           <Route path="sujets" element={<AdminTopicsPage />} />
           <Route path="sujets/:id" element={<AdminTopicDetailPage />} />
+          <Route path="editions" element={<AdminEditionsPage />} />
+          <Route path="editions/:date" element={<AdminEditionDetailPage />} />
+          <Route path="apercu" element={<AdminPreviewPage />} />
           <Route path="*" element={<AdminHomePage />} />
         </Route>
         <Route element={<Layout />}>
