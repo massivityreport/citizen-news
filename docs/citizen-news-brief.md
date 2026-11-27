@@ -1,5 +1,7 @@
 # Citizen News — brief produit
 
+> **Remplacé par le [brief V2](citizen-news-brief-v2.md)** (une personnelle de 10 sujets, une collective à 17 h). Ce document décrit la V1 (vote, Successive Halving), conservée pour mémoire : ces mécanismes ont été supprimés.
+
 ## La promesse
 
 **Citizen News, ce n’est pas Google News. C’est la une choisie par les citoyens.**
