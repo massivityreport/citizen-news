@@ -48,15 +48,16 @@ def run_cluster() -> int:
     return 0
 
 
-def run_seed_demo(seed: int = 1) -> int:
+def run_seed_demo(seed: int = 1, reset: bool = False) -> int:
     settings = get_settings()
     if settings.cookie_secure or not settings.demo_seed:
         log.error("seed-demo est réservé au développement : définissez DEMO_SEED=true (refusé avec COOKIE_SECURE=true)")
         return 2
     with Session(get_engine()) as session:
-        report = seed_demo(session, seed=seed)
+        report = seed_demo(session, seed=seed, reset=reset)
     log.info(
-        "démo : %d sujets", report.topics,
+        "démo : %d sujets, %d articles, %d comptes fictifs, %d sélections pour l'édition du %s, %d éditions passées",
+        report.topics, report.articles, report.accounts, report.selections, report.edition_date, report.editions,
     )
     return 0
 
@@ -139,8 +140,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     sub.add_parser("refresh", help="ingest puis cluster")
     demo = sub.add_parser("seed-demo", help="crée des médias et des sujets fictifs (développement, DEMO_SEED=true)")
     demo.add_argument("--seed", type=int, default=1, help="graine du générateur (défaut 1)")
+    demo.add_argument("--reset", action="store_true", help="supprime aussi toutes les éditions et toutes les unes avant (calendrier vierge)")
     close = sub.add_parser("close-edition", help="publie l'édition due la plus récente (idempotent)")
     close.add_argument("--dry-run", action="store_true", help="affiche le classement sans rien publier")
+    close.add_argument(
+        "--now", metavar="ISO", help="horloge simulée (ex. 2026-11-27T17:01:00+01:00, fuseau obligatoire) ; "
+        "sans --dry-run, réservé au développement (DEMO_SEED=true)",
+    )
     run = sub.add_parser("run", help="refresh en boucle + clôture de l'édition chaque minute")
     run.add_argument(
         "--interval-minutes",
@@ -159,9 +165,21 @@ def main(argv: Sequence[str] | None = None) -> int:
             signal.signal(sig, lambda *_: stop.set())
         return run_worker(args.interval_minutes, stop)
     if args.command == "close-edition":
-        return run_close(args.dry_run)
+        now = None
+        if args.now:
+            try:
+                now = datetime.fromisoformat(args.now)
+            except ValueError:
+                parser.error(f"--now : date ISO 8601 invalide : « {args.now} »")
+            if now.tzinfo is None:
+                parser.error("--now doit porter un fuseau horaire (ex. 2026-11-27T17:01:00+01:00 ou ...Z)")
+            settings = get_settings()
+            if not args.dry_run and (settings.cookie_secure or not settings.demo_seed):
+                log.error("--now sans --dry-run publierait une édition à une date fictive : réservé au développement (DEMO_SEED=true)")
+                return 2
+        return run_close(args.dry_run, now)
     if args.command == "seed-demo":
-        return run_seed_demo(args.seed)
+        return run_seed_demo(args.seed, args.reset)
     return {"ingest": run_ingest, "cluster": run_cluster, "refresh": run_refresh}[args.command]()
 
 

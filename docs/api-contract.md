@@ -10,7 +10,7 @@ Contrat des routes de Citizen News V2 : chaque citoyen compose sa une de 10 suje
 - **Compteurs d'approbation** : jamais dans une réponse destinée à un citoyen avant la publication (ni bassin, ni `/me/une`, ni erreur). Ils apparaissent dans l'édition publiée et dans le backoffice.
 - **Remplacement net de V1** (décision de l'humain) : plus de vote, de halving, de `support`/`reason`, de `/api/topics/front`, `/api/vote/next`, `/api/votes*`, `/api/halving/config`. La migration 0009 a supprimé ces données.
 
-**État d'implémentation** — implémenté : `GET /api/health`, les éditions publiées (`GET /api/edition/current`, `/api/editions*`), l'agrégation et la clôture (worker), l'authentification avec brouillon, le bassin (`GET /api/topics/pool`), la une personnelle (`/api/me/une*`), le calendrier d'édition, le backoffice sources et articles, `GET /api/admin/topics` (+ détail) et `GET /api/admin/stats` dans leur forme réduite décrite plus bas, la `TopicCard` V2. Implémenté aussi : l'aperçu de l'édition, les listes d'éditions admin, `approvals`/participants admin. Les sections ci-dessous marquées « (implémenté) » le sont ; les autres décrivent la cible.
+**État** : toutes les routes décrites ci-dessous sont implémentées et testées (`api/tests/`) ; ce document décrit le comportement réel du backend. La V1 n'a plus aucune trace dans l'API (voir « Remplacement net de V1 » ci-dessus).
 
 ## Types communs
 
@@ -115,7 +115,7 @@ Capture **figée** (titre, résumé, sources, nombre de médias… copiés à la
 
 Détails d'implémentation (`app/services/edition_close.py`) : `target_edition` choisit la date à publier (la plus ancienne échue avec des unes, sinon la plus récente) ; les jours sans unes qui la précèdent ne produisent rien, et le calendrier passe à la suite car il s'appuie sur la dernière édition publiée. Verrou `pg_advisory_xact_lock` puis nouvelle vérification sous verrou ; la contrainte unique `editions.edition_date` est le filet (conflit = pas de seconde édition). L'édition et ses `edition_topics` s'insèrent dans une seule transaction (échec = rien de publié, le tick suivant réessaie). `published_at` = l'horloge `now` du tick. Après publication, l'ingestion peut modifier les sujets : l'édition ne change plus. Course à 17 h : toute écriture de une (`PUT`, `PUT/DELETE topics`, `merge`, fusion du brouillon à la vérification) prend d'abord `pg_advisory_xact_lock_shared` sur la même clé que la clôture (exclusive), puis lit l'état de l'édition, puis verrouille la ligne du compte (ordre fixe, pas d'interblocage). Une écriture en vol fait attendre la clôture, donc elle est comptée ; une écriture qui démarre pendant la clôture attend, voit l'édition publiée et écrit sur le lendemain. Le verrou ne dure que la courte transaction de l'écriture. Participants et scores sont lus dans une seule requête (un seul instantané) : jamais de `proportion` > 1, même pour l'aperçu.
 
-## Authentification (lien magique) (implémenté, brouillon compris)
+## Authentification (lien magique)
 
 ### `POST /api/auth/magic-link`
 
