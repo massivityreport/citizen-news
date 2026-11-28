@@ -100,12 +100,34 @@ describe("Composer avec compte", () => {
     expect(screen.getByRole("button", { name: /Suivant/ })).toBeEnabled();
   });
 
-  it("409 « une complète » côté serveur : message de remplacement", async () => {
+  it("409 « une complète » côté serveur : la fenêtre de remplacement s'ouvre", async () => {
     mount({ routes: { "PUT /api/me/une/topics/1": () => res(409, { detail: "Votre une est complète" }) } });
     await heading(1);
     await click("Ajouter à ma une");
-    expect(await screen.findByText(/Pour ajouter ce sujet/)).toBeInTheDocument();
-    expect(screen.getByRole("progressbar", { name: "0/10 sujets" })).toBeInTheDocument();
+    expect(await screen.findByRole("dialog", { name: "Votre une est pleine" })).toBeInTheDocument();
+  });
+
+  it("une pleine : cliquer un sujet de la fenêtre le retire (DELETE) puis ajoute le nouveau (PUT)", async () => {
+    const full = une([1, 2, 3, 4, 5, 7, 8, 9, 10, 11]);
+    const fn = mount({
+      une: full,
+      routes: {
+        "DELETE /api/me/une/topics/2": () => res(200, une([1, 3, 4, 5, 7, 8, 9, 10, 11])),
+        "PUT /api/me/une/topics/6": () => res(200, une([1, 3, 4, 5, 7, 8, 9, 10, 11, 6])),
+      },
+    });
+    await heading(1);
+    await saved();
+    for (let i = 0; i < 5; i++) await click(/Suivant/);
+    await heading(6);
+    await click("Ajouter à ma une");
+    const d = await screen.findByRole("dialog", { name: "Votre une est pleine" });
+    await userEvent.click(within(d).getByRole("button", { name: /Remplacer « Sujet 2 »/ }));
+    await userEvent.click(within(screen.getByRole("dialog", { name: "Confirmer le remplacement" })).getByRole("button", { name: "Remplacer" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    const calls = fn.mock.calls.map(([u, i]) => `${i?.method ?? "GET"} ${u}`).filter((c) => !c.startsWith("GET"));
+    expect(calls).toEqual(["DELETE /api/me/une/topics/2", "PUT /api/me/une/topics/6"]);
+    expect(await screen.findByText(/« Sujet 6 » remplace « Sujet 2 »/)).toBeInTheDocument();
   });
 
   it("401 sur la une : repasse au brouillon local", async () => {

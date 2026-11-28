@@ -6,6 +6,7 @@ import { usePageTitle } from "../components/usePageTitle";
 import { ActionBar, Carousel, type CarouselActions } from "../composer/Carousel";
 import { ExploreTabs, PANEL_ID, TABS, tabId } from "../composer/ExploreTabs";
 import { Gauge } from "../composer/Gauge";
+import { FullDialog } from "../composer/FullDialog";
 import { Preview } from "../composer/Preview";
 import { ReviewPanel } from "../composer/ReviewPanel";
 import { useComposition, type Result } from "../composer/useComposition";
@@ -15,7 +16,7 @@ import { MAX_PLACES } from "../lib/draft";
 import { formatHour } from "../lib/format";
 
 type Positions = Record<PoolTab, { id: number; index: number } | null>;
-type Notice = { kind: "full" } | { kind: "error"; text: string } | { kind: "merge"; text: string } | null;
+type Notice = { kind: "error"; text: string } | { kind: "merge"; text: string } | null;
 
 const EMPTY_TEXT: Record<PoolTab, string> = {
   random: "Aucun sujet n’est encore disponible aujourd’hui. Revenez un peu plus tard.",
@@ -33,6 +34,9 @@ export default function ComposerPage() {
   const [replacing, setReplacing] = useState<{ id: number; place: number } | null>(null);
   const [status, setStatus] = useState("");
   const [notice, setNotice] = useState<Notice>(null);
+  // Sujet qu'on voulait ajouter à une une pleine : la fenêtre « Votre une est pleine » est ouverte pour lui.
+  const [full, setFull] = useState<TopicCard | null>(null);
+  const [fullBusy, setFullBusy] = useState(false);
 
   // « Au hasard » est toujours chargé : il sert de référence pour les titres de l'aperçu.
   const random = usePool("random", seed);
@@ -113,8 +117,9 @@ export default function ComposerPage() {
       case "absent":
         break;
       case "full":
-        setNotice({ kind: "full" });
-        setStatus(`Votre une est complète (${count(MAX_PLACES)}). Ouvrez « Revoir et valider » pour remplacer un sujet.`);
+        setNotice(null);
+        setFull(t);
+        setStatus(`Votre une est pleine (${count(MAX_PLACES)}) : choisissez le sujet à remplacer, ou annulez.`);
         break;
       case "closed":
         setNotice(null);
@@ -146,6 +151,20 @@ export default function ComposerPage() {
   async function onRemove() {
     if (!topic || readOnly) return;
     report(await comp.remove(topic.id), topic);
+  }
+
+  async function replaceFromFull(oldId: number, place: number) {
+    if (!full || fullBusy) return;
+    const incoming = full;
+    const old = titles[place - 1];
+    setFullBusy(true);
+    const r = await comp.replace(oldId, incoming.id);
+    setFullBusy(false);
+    setFull(null);
+    if (r.outcome === "added") {
+      setNotice(null);
+      setStatus(`« ${incoming.title} » remplace « ${old} » (place ${place}).`);
+    } else report(r, incoming);
   }
 
   const actions: CarouselActions = {
@@ -307,16 +326,6 @@ export default function ComposerPage() {
         {body}
       </div>
 
-      {notice?.kind === "full" && (
-        <div className={styles.notice} data-kind="error">
-          <p className={styles.noticeText}>
-            Votre une est complète ({MAX_PLACES}/{MAX_PLACES}). Pour ajouter ce sujet, remplacez-en un autre.
-          </p>
-          <button type="button" className={styles.btn} onClick={() => setView("review")}>
-            Revoir et valider
-          </button>
-        </div>
-      )}
       {(notice?.kind === "error" || notice?.kind === "merge") && (
         <p className={styles.notice} data-kind={notice.kind === "error" ? "error" : undefined}>
           {notice.text}
@@ -334,6 +343,18 @@ export default function ComposerPage() {
           inUne={inUneSet.has(topic.id)}
           readOnly={readOnly}
           addLabel={addLabel}
+        />
+      )}
+      {full && (
+        <FullDialog
+          incoming={full.title}
+          places={comp.ids.map((id, i) => ({ id, title: titles[i] }))}
+          busy={fullBusy}
+          onReplace={(id, place) => void replaceFromFull(id, place)}
+          onCancel={() => {
+            setFull(null);
+            setStatus("Ajout annulé : votre une n’a pas changé.");
+          }}
         />
       )}
       <p className={styles.help}>
