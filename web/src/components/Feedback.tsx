@@ -72,17 +72,18 @@ export function FeedbackTab() {
   );
 }
 
-function pageContext(pathname: string, search: string) {
+// Le chemin seul : les paramètres (recherche tapée, etc.) ne partent jamais avec l'avis, comme dans le parcours récent.
+function pageContext(pathname: string) {
   const name = document.title.replace(/\s*—\s*Citizen News$/, "").trim();
   const w = Math.min(Math.round(window.innerWidth), 9999);
   const h = Math.min(Math.round(window.innerHeight), 9999);
-  return { page_name: (name || "Citizen News").slice(0, 200), page_url: `${pathname}${search}`.slice(0, 500), screen: `${w}x${h}` };
+  return { page_name: (name || "Citizen News").slice(0, 200), page_url: pathname.slice(0, 500), screen: `${w}x${h}` };
 }
 
 function FeedbackDialog({ onClose }: { onClose: () => void }) {
   const me = useMe();
-  const { pathname, search } = useLocation();
-  const [page] = useState(() => pageContext(pathname, search));
+  const { pathname } = useLocation();
+  const [page] = useState(() => pageContext(pathname));
   const [kind, setKind] = useState<FeedbackKind>("other");
   const [message, setMessage] = useState("");
   const [email, setEmail] = useState("");

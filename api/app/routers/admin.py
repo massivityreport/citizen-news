@@ -302,5 +302,6 @@ def reply_to_feedback(
 
 @protected.delete("/feedback/{feedback_id}", status_code=204)
 def delete_feedback(feedback_id: int, db: Session = Depends(get_session)) -> Response:
-    _feedback_or_404(feedback_service.delete_feedback(db, feedback_id) or None)
+    if not feedback_service.delete_feedback(db, feedback_id):
+        raise HTTPException(status_code=404, detail="Avis introuvable.")
     return Response(status_code=204)
