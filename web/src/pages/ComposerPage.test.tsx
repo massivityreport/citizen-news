@@ -179,27 +179,62 @@ describe("Composer : ajout, retrait, une pleine (brouillon local)", () => {
     expect(await screen.findByRole("heading", { level: 3, name: "Sujet 2" })).toBeInTheDocument();
   });
 
-  it("une pleine : l'ajout est refusé avec « Revoir et valider » ; retirer fonctionne", async () => {
+  it("une pleine : l'ajout ouvre « Votre une est pleine » ; cliquer un sujet le remplace", async () => {
     draftStore.set({ editionDate: "2026-11-27", ids: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] });
     mount();
     renderPage();
     await screen.findByRole("heading", { level: 3, name: "Sujet 1" });
-    expect(screen.getByRole("progressbar", { name: "10/10 sujets" })).toBeInTheDocument();
-    swipe(-120, 0);
-    swipe(-120, 0);
-    await screen.findByRole("heading", { level: 3, name: "Sujet 3" });
-    // aller au sujet 11 (hors une)
-    for (let i = 0; i < 8; i++) await next();
+    for (let i = 0; i < 10; i++) await next();
     expect(title()).toBe("Sujet 11");
     await add();
-    expect(await screen.findByText(/Votre une est complète \(10\/10\)\. Pour ajouter/)).toBeInTheDocument();
+    const d = await screen.findByRole("dialog", { name: "Votre une est pleine" });
+    expect(within(d).getByText(/« Sujet 11 »/)).toBeInTheDocument();
+    const choices = within(d).getAllByRole("button", { name: /^Remplacer/ });
+    expect(choices).toHaveLength(10);
+    expect(choices[2]).toHaveAccessibleName("Remplacer « Sujet 3 » (place 3)");
+    await userEvent.click(choices[2]);
+    // Écran de confirmation : les deux titres en entier, rien n'a encore changé.
+    const c = screen.getByRole("dialog", { name: "Confirmer le remplacement" });
+    expect(within(c).getByText("Sujet 3")).toBeInTheDocument();
+    expect(within(c).getByText("Sujet 11")).toBeInTheDocument();
+    expect(within(c).getByText(/place 3/)).toBeInTheDocument();
+    expect(draftStore.get().ids).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    await userEvent.click(within(c).getByRole("button", { name: "Remplacer" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(draftStore.get().ids).toEqual([1, 2, 4, 5, 6, 7, 8, 9, 10, 11]);
+    expect(await screen.findByText(/« Sujet 11 » remplace « Sujet 3 »/)).toBeInTheDocument();
     expect(screen.getByRole("progressbar", { name: "10/10 sujets" })).toBeInTheDocument();
-    const alertBtns = screen.getAllByRole("button", { name: "Revoir et valider" });
-    expect(alertBtns.length).toBeGreaterThanOrEqual(2);
-    // retirer un sujet de la une : toujours possible
-    await userEvent.click(screen.getByRole("button", { name: /Précédent/ }));
-    await userEvent.click(screen.getByRole("button", { name: "Retirer de ma une" }));
-    expect(await screen.findByText("Retiré de votre une (9/10)")).toBeInTheDocument();
+  });
+
+  it("une pleine : « Annuler » ferme la fenêtre sans rien changer (Échap aussi)", async () => {
+    draftStore.set({ editionDate: "2026-11-27", ids: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] });
+    mount();
+    renderPage();
+    await screen.findByRole("heading", { level: 3, name: "Sujet 1" });
+    for (let i = 0; i < 10; i++) await next();
+    await add();
+    const d = await screen.findByRole("dialog", { name: "Votre une est pleine" });
+    await userEvent.click(within(d).getByRole("button", { name: "Annuler" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await add();
+    await screen.findByRole("dialog", { name: "Votre une est pleine" });
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(draftStore.get().ids).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  });
+
+  it("une pleine : « Retour » sur la confirmation revient à la liste sans rien changer", async () => {
+    draftStore.set({ editionDate: "2026-11-27", ids: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] });
+    mount();
+    renderPage();
+    await screen.findByRole("heading", { level: 3, name: "Sujet 1" });
+    for (let i = 0; i < 10; i++) await next();
+    await add();
+    const d = await screen.findByRole("dialog", { name: "Votre une est pleine" });
+    await userEvent.click(within(d).getByRole("button", { name: /Remplacer « Sujet 5 »/ }));
+    await userEvent.click(within(screen.getByRole("dialog", { name: "Confirmer le remplacement" })).getByRole("button", { name: "Retour" }));
+    expect(screen.getByRole("dialog", { name: "Votre une est pleine" })).toBeInTheDocument();
+    expect(draftStore.get().ids).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
   });
 });
 
