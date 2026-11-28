@@ -89,6 +89,19 @@ describe("formulaire", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
+  it("la page de l'avis part sans ses paramètres d'URL", async () => {
+    const fetchMock = setup(null);
+    renderApp("/archives?q=secret#haut");
+    await openForm();
+    const d = await dialog();
+    await userEvent.type(within(d).getByLabelText("Votre message"), "Un souci");
+    await userEvent.type(within(d).getByLabelText("Adresse e-mail"), "visiteur@example.org");
+    await userEvent.click(within(d).getByRole("button", { name: "Envoyer" }));
+    expect(await screen.findByText(/merci/i)).toBeInTheDocument();
+    const [body] = bodiesOf(fetchMock, "POST /api/feedback");
+    expect(body.page_url).toBe("/archives");
+  });
+
   it("connecté : adresse affichée, aucun champ e-mail, rien d'envoyé côté client", async () => {
     const fetchMock = setup("moi@example.org");
     renderApp("/archives");

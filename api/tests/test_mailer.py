@@ -106,3 +106,17 @@ def test_console_backend_warns_at_startup(caplog, database_url):
     with caplog.at_level(logging.WARNING, logger="app.mail"):
         create_app()
     assert "MAIL_BACKEND=console" in caplog.text and "Development only" in caplog.text
+
+
+@pytest.mark.parametrize("separator", ["\n", "\r\n", "\r", " ", "\x0b", "\x1c"])
+def test_reply_subject_cannot_inject_a_header(separator):
+    """An opinion beginning with a line break then `Bcc:` must stay inside the subject, on one line."""
+    subject, _ = mailer.reply_message(f"Bonjour{separator}Bcc: espion@exemple.org", "Merci")
+    assert "\n" not in subject and "\r" not in subject
+    m = mailer.SmtpMailer(_settings(mail_backend="smtp", smtp_host="mailpit", smtp_port=1025, smtp_starttls=False))
+    m.send("auteur@exemple.org", subject, "Merci")
+    [(_, message)] = [c for c in FakeSMTP.instances[-1].calls if c[0] == "send"]
+    assert message["Bcc"] is None
+    assert set(message.keys()) == {"From", "To", "Subject", "Content-Type", "Content-Transfer-Encoding", "MIME-Version"}
+    sent = message.as_bytes()
+    assert b"\nBcc:" not in sent and b"\rBcc:" not in sent

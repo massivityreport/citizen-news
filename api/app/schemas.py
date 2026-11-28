@@ -102,6 +102,18 @@ def _clean_line(value: str) -> str:
     return value
 
 
+# A page of the site as the browser shows it, without parameters: "/", "/une/2026-11-26". No scheme, host, query,
+# fragment, space or backslash: the admin reads it, and it must never carry what the visitor typed in a search.
+SITE_PATH = re.compile(r"^/(?!/)[^?#\s\\]*$")
+
+
+def _site_path(value: str) -> str:
+    value = _clean_line(value)
+    if not SITE_PATH.match(value):
+        raise ValueError("chemin du site sans paramètres attendu")
+    return value
+
+
 class RecentAction(BaseModel):
     """One step of the visitor's recent journey: a page opened, a topic added to / removed from the front page, a login."""
 
@@ -112,10 +124,15 @@ class RecentAction(BaseModel):
     page: str | None = Field(None, max_length=500)
     topic_id: int | None = Field(None, ge=1, le=2**31 - 1)
 
-    @field_validator("at", "page")
+    @field_validator("at")
     @classmethod
-    def _line(cls, value: str | None) -> str | None:
-        return None if value is None else _clean_line(value)
+    def _line(cls, value: str) -> str:
+        return _clean_line(value)
+
+    @field_validator("page")
+    @classmethod
+    def _page(cls, value: str | None) -> str | None:
+        return None if value is None else _site_path(value)
 
     @model_validator(mode="after")
     def _fields_match_type(self) -> "RecentAction":
@@ -129,7 +146,7 @@ class RecentAction(BaseModel):
 class FeedbackRequest(BaseModel):
     """An opinion typed on the site. `email` is only read for visitors without a session."""
 
-    kind: Literal["problem", "idea", "other"]
+    kind: Literal["problem", "idea", "other"] = "other"
     message: str = Field(max_length=FEEDBACK_MAX_LENGTH * 2)  # raw cap protects the parser; the real one applies after strip
     email: str | None = Field(None, max_length=400)
     page_name: str = Field(max_length=200)
@@ -145,13 +162,15 @@ class FeedbackRequest(BaseModel):
             raise ValueError("message invalide")
         return value
 
-    @field_validator("page_name", "page_url")
+    @field_validator("page_name")
     @classmethod
     def _no_control_chars(cls, value: str) -> str:
-        value = value.strip()
-        if not value or any(ord(c) < 32 or ord(c) == 127 for c in value):
-            raise ValueError("valeur invalide")
-        return value
+        return _clean_line(value)
+
+    @field_validator("page_url")
+    @classmethod
+    def _page_url(cls, value: str) -> str:
+        return _site_path(value)
 
     @field_validator("email")
     @classmethod

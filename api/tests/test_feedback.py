@@ -10,7 +10,7 @@ PAYLOAD = {
     "message": "Le bouton ne répond pas",
     "email": "visiteur@example.org",
     "page_name": "Accueil",
-    "page_url": "/une/2026-11-26?x=1",
+    "page_url": "/une/2026-11-26",
     "screen": "390x844",
 }
 
@@ -31,7 +31,7 @@ def test_anonymous_feedback_is_stored(api, session):
     assert r.status_code == 201
     [f] = rows(session)
     assert (f.email, f.kind, f.message) == ("visiteur@example.org", "problem", "Le bouton ne répond pas")
-    assert (f.page_name, f.page_url, f.screen, f.browser) == ("Accueil", "/une/2026-11-26?x=1", "390x844", "TestBrowser/1.0")
+    assert (f.page_name, f.page_url, f.screen, f.browser) == ("Accueil", "/une/2026-11-26", "390x844", "TestBrowser/1.0")
     assert f.recent_actions is None
 
 
@@ -61,6 +61,26 @@ def test_message_too_long_is_refused_and_2000_accepted(api, session):
 @pytest.mark.parametrize("message", ["", "   \n "])
 def test_empty_message_is_refused(api, session, message):
     assert send(api, message=message).status_code == 422
+
+
+def test_kind_defaults_to_other(api, session):
+    assert send(api, kind=None).status_code == 201
+    assert rows(session)[0].kind == "other"
+
+
+NOT_SITE_PATHS = ["/une?x=1", "/une#haut", "/une?", "https://exemple.org/une", "//exemple.org/une", "une", "/une page", "/une\\x"]
+
+
+@pytest.mark.parametrize("value", NOT_SITE_PATHS)
+def test_page_url_must_be_a_site_path_without_parameters(api, session, value):
+    assert send(api, page_url=value).status_code == 422
+    assert rows(session) == []
+
+
+@pytest.mark.parametrize("value", NOT_SITE_PATHS)
+def test_recent_pages_must_be_site_paths_without_parameters(api, session, value):
+    assert send(api, recent_actions=[action(0, page=value)]).status_code == 422
+    assert rows(session) == []
 
 
 def test_kind_must_be_known(api):
@@ -111,7 +131,7 @@ def test_invalid_requests_do_not_use_the_quota(api):
 
 
 def action(i=0, **over):
-    return {"type": "page", "at": f"2026-11-27T10:{i % 60:02d}:00.000Z", "page": f"/archives?p={i}", **over}
+    return {"type": "page", "at": f"2026-11-27T10:{i % 60:02d}:00.000Z", "page": f"/une/2026-11-{i % 28 + 1:02d}", **over}
 
 
 def test_recent_actions_are_stored(api, session):
